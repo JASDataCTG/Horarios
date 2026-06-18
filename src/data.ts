@@ -236,10 +236,46 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
 }
 
 // Automatic scheduling resolver algorithm to clean conflicts optimally
-export function autoResolveConflicts(entries: ScheduleEntry[]): ScheduleEntry[] {
+export function autoResolveConflicts(entries: ScheduleEntry[], targetSemester?: number): ScheduleEntry[] {
   // Deep clone to prevent mutations
   const result: ScheduleEntry[] = entries.map(e => ({ ...e }));
 
+  if (targetSemester !== undefined && targetSemester !== null) {
+    // Reorganize ONLY targetSemester
+    const targetEntries = result.filter(e => e.semester === targetSemester);
+    const frozenEntries = result.filter(e => e.semester !== targetSemester);
+
+    const isLow = targetSemester >= 1 && targetSemester <= 5;
+    const isHigh = targetSemester >= 6 && targetSemester <= 9;
+
+    let solved: ScheduleEntry[];
+    if (isLow) {
+      solved = solveGroup(targetEntries, [
+        { shift: 'morning', maxBlocks: 8, baseHour: 7 },
+        { shift: 'afternoon', maxBlocks: 4, baseHour: 14 }
+      ], frozenEntries);
+    } else if (isHigh) {
+      solved = solveGroup(targetEntries, [
+        { shift: 'evening', maxBlocks: 5, baseHour: 18 }
+      ], frozenEntries);
+    } else {
+      solved = solveGroup(targetEntries, [
+        { shift: 'morning', maxBlocks: 8, baseHour: 7 },
+        { shift: 'afternoon', maxBlocks: 4, baseHour: 14 },
+        { shift: 'evening', maxBlocks: 5, baseHour: 18 }
+      ], frozenEntries);
+    }
+
+    const solvedMap = new Map(solved.map(e => [e.id, e]));
+    return result.map(e => {
+      if (solvedMap.has(e.id)) {
+        return solvedMap.get(e.id)!;
+      }
+      return e;
+    });
+  }
+
+  // General resolution (all semesters)
   const lowSemesters = result.filter(e => e.semester >= 1 && e.semester <= 5);
   const highSemesters = result.filter(e => e.semester >= 6 && e.semester <= 9);
   const otherSemesters = result.filter(e => !(e.semester >= 1 && e.semester <= 9));
@@ -258,7 +294,8 @@ export function autoResolveConflicts(entries: ScheduleEntry[]): ScheduleEntry[] 
 
 function solveGroup(
   groupEntries: ScheduleEntry[],
-  shifts: { shift: 'morning' | 'afternoon' | 'evening'; maxBlocks: number; baseHour: number }[]
+  shifts: { shift: 'morning' | 'afternoon' | 'evening'; maxBlocks: number; baseHour: number }[],
+  frozenEntries: ScheduleEntry[] = []
 ): ScheduleEntry[] {
   // Sort: largest duration in blocks first
   const sorted = [...groupEntries].sort((a, b) => {
@@ -346,6 +383,20 @@ function solveGroup(
       }
     }
   };
+
+  // Pre-occupy slots for the frozen entries to treat them as locked scheduling constraints
+  frozenEntries.forEach(fe => {
+    const shift = getShiftForTime(fe.startTime);
+    if (shift !== 'none') {
+      const baseHour = shift === 'morning' ? 7 : shift === 'afternoon' ? 14 : 18;
+      const startMins = timeToMinutes(fe.startTime);
+      const baseMins = baseHour * 60;
+      const startBlk = Math.max(0, Math.floor((startMins - baseMins) / 45));
+      const numBlocks = Math.ceil((fe.durationHours * 60) / 45);
+      const room = fe.room || 'Por asignar';
+      setSpanOccupancy(fe, fe.day, shift, startBlk, numBlocks, room, true);
+    }
+  });
 
   const getClosenessPenalty = (
     entry: ScheduleEntry,

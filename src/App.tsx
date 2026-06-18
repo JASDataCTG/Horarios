@@ -553,9 +553,19 @@ export default function App() {
     try {
       const resolved = autoResolveConflicts(entries);
       saveEntries(resolved);
-      alert('¡Resolución de conflictos completada éxitosamente! Se han reorganizado las franjas horarias respetando las restricciones de semestres (1ro-5to de mañana/tarde, y de 6to-9no de noche) y previniendo cruces de aulas, docentes o semestres.');
+      alert('¡Resolución de conflictos general completada exitosamente! Se han reorganizado todas las franjas horarias respetando las restricciones de semestres (1-5 de mañana/tarde, y de 6-9 de noche) y previniendo cruces de aulas, docentes o semestres.');
     } catch (error) {
       alert('Error de procesamiento al intentar resolver automáticamente.');
+    }
+  };
+
+  const handleAutoResolveConflictsBySemester = (semester: number) => {
+    try {
+      const resolved = autoResolveConflicts(entries, semester);
+      saveEntries(resolved);
+      alert(`¡Reorganización del Semestre ${semester} completada con éxito! Se han recalculado sus franjas horarias congelando los demás semestres para evitar cualquier cruce.`);
+    } catch (error) {
+      alert(`Error de procesamiento al intentar resolver automáticamente el Semestre ${semester}.`);
     }
   };
 
@@ -874,14 +884,34 @@ export default function App() {
                      </>
                    )}
                  </button>
-                 <button
-                   onClick={handleAutoResolveConflicts}
-                   className="flex items-center gap-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
-                   title="Resuelve automáticamente los cruces de aulas, docentes, semestres, y ajusta jornadas"
-                 >
-                   <Sparkles className="w-3.5 h-3.5 shrink-0 animate-pulse" />
-                   <span>Arreglar Conflictos</span>
-                 </button>
+                                   <div className="flex items-center gap-1.5 bg-amber-50/65 border border-amber-200/55 rounded-lg p-1 text-left no-print">
+                    <select
+                      id="opt-reprogram-select"
+                      className="bg-transparent border-none text-[11px] font-bold text-amber-900 outline-none pr-1.5 cursor-pointer font-sans"
+                      defaultValue="all"
+                    >
+                      <option value="all">Programación General</option>
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(sem => (
+                        <option key={sem} value={sem.toString()}>Semestre {sem}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        const sel = document.getElementById('opt-reprogram-select') as HTMLSelectElement;
+                        const val = sel ? sel.value : 'all';
+                        if (val === 'all') {
+                          handleAutoResolveConflicts();
+                        } else {
+                          handleAutoResolveConflictsBySemester(parseInt(val, 10));
+                        }
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded-md shadow-xs transition-all cursor-pointer whitespace-nowrap"
+                      title="Reprogramar automáticamente el espectro seleccionado sin alterar otros"
+                    >
+                      <Sparkles className="w-3 h-3 shrink-0 animate-pulse text-amber-100" />
+                      <span>Reorganizar</span>
+                    </button>
+                  </div>
                  <button
                    onClick={handleOpenCreate}
                    className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
