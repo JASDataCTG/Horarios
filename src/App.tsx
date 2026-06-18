@@ -19,7 +19,9 @@ import {
   BookmarkCheck,
   CheckCircle,
   HelpCircle,
-  Clock
+  Clock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 import { ScheduleEntry, ShiftType } from './types';
@@ -34,7 +36,42 @@ import SemesterStatusMatrix from './components/SemesterStatusMatrix';
 
 export default function App() {
   // --- STATE ---
-  const [entries, setEntries] = useState<ScheduleEntry[]>([]);
+  const [entries, setEntries] = useState<ScheduleEntry[]>(() => {
+    try {
+      const saved = localStorage.getItem('university_schedule_entries');
+      if (saved !== null) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read from localstorage synchronously, falling back to default pdf list.', e);
+    }
+    return INITIAL_ENTRIES;
+  });
+
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('university_schedule_show_diagnostics');
+      return saved !== 'false';
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleDiagnostics = () => {
+    setShowDiagnostics(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('university_schedule_show_diagnostics', String(next));
+      } catch (e) {
+        console.error(e);
+      }
+      return next;
+    });
+  };
+
   const [selectedTab, setSelectedTab] = useState<'grid' | 'list' | 'classrooms' | 'teachers'>('grid');
   const [selectedShift, setSelectedShift] = useState<ShiftType>('all');
   const [selectedSemester, setSelectedSemester] = useState<string>('all');
@@ -52,31 +89,13 @@ export default function App() {
   // File Upload reference
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  // --- PERSISTENCE HOOK ---
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('university_schedule_entries');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setEntries(parsed);
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn('Could not read from localstorage, falling back to default pdf list.', e);
-    }
-    // Default load
-    setEntries(INITIAL_ENTRIES);
-  }, []);
-
   // Save changes to localStorage on entries change
   const saveEntries = (newEntries: ScheduleEntry[]) => {
     setEntries(newEntries);
     try {
       localStorage.setItem('university_schedule_entries', JSON.stringify(newEntries));
     } catch (e) {
-      console.error('Failed to save state to localStore', e);
+      console.error('Failed to save state to localStorage', e);
     }
   };
 
@@ -473,8 +492,8 @@ export default function App() {
         {/* 3. Primary Workspace Divide Grid (Left Panels + Right Diagnostic) */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           
-          {/* LEFT 8-COLS: Tab controller and active workspace panel */}
-          <div className="lg:col-span-8 space-y-4 flex flex-col h-full">
+          {/* LEFT COLUMN: Tab controller and active workspace panel (expands to col-12 when diagnostics are hidden) */}
+          <div className={`${showDiagnostics ? 'lg:col-span-8' : 'lg:col-span-12'} transition-all duration-300 space-y-4 flex flex-col h-full`}>
             
             {/* Panel Tabs Controls - Geometric Balance styled */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-2 flex flex-wrap gap-1.5 no-print">
@@ -506,25 +525,46 @@ export default function App() {
                 <User className="w-4 h-4" />
                 Carga de Docentes
               </button>
-
-              <div className="ml-auto no-print flex items-center gap-2">
-                <button
-                  onClick={handleAutoResolveConflicts}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
-                  title="Resuelve automáticamente los cruces de aulas, docentes, semestres, y ajusta jornadas"
-                >
-                  <Sparkles className="w-4 h-4 shrink-0 animate-pulse" />
-                  <span>Arreglar Conflictos</span>
-                </button>
-                <button
-                  onClick={handleOpenCreate}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
-                >
-                  <Plus className="w-4 h-4 shrink-0" />
-                  Agregar Clase
-                </button>
-              </div>
-            </div>
+ 
+               <div className="ml-auto no-print flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                 <button
+                   onClick={toggleDiagnostics}
+                   className={`flex items-center gap-1.5 px-3 py-2 text-xs font-extrabold rounded-lg border shadow-xs transition-all cursor-pointer ${
+                     showDiagnostics 
+                       ? 'bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-700' 
+                       : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100 text-emerald-700'
+                   }`}
+                   title={showDiagnostics ? 'Ocultar panel lateral de diagnósticos y alertas choques' : 'Mostrar panel lateral de diagnósticos y alertas choques'}
+                 >
+                   {showDiagnostics ? (
+                     <>
+                       <EyeOff className="w-3.5 h-3.5 shrink-0" />
+                       <span>Ocultar Alertas ({conflicts.length})</span>
+                     </>
+                   ) : (
+                     <>
+                       <Eye className="w-3.5 h-3.5 shrink-0 animate-pulse text-emerald-600" />
+                       <span>Mostrar Alertas ({conflicts.length})</span>
+                     </>
+                   )}
+                 </button>
+                 <button
+                   onClick={handleAutoResolveConflicts}
+                   className="flex items-center gap-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
+                   title="Resuelve automáticamente los cruces de aulas, docentes, semestres, y ajusta jornadas"
+                 >
+                   <Sparkles className="w-3.5 h-3.5 shrink-0 animate-pulse" />
+                   <span>Arreglar Conflictos</span>
+                 </button>
+                 <button
+                   onClick={handleOpenCreate}
+                   className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
+                 >
+                   <Plus className="w-3.5 h-3.5 shrink-0" />
+                   Agregar Clase
+                 </button>
+               </div>
+             </div>
 
             {/* TAB CONTENT RENDERING (Animated fade ins / out) */}
             <div className="flex-1">
@@ -804,42 +844,44 @@ export default function App() {
             </div>
           </div>
 
-          {/* RIGHT 4-COLS: Real-time conflicts and diagnostic alerts console */}
-          <div className="lg:col-span-4 sticky top-6 space-y-4 no-print">
-            <ConflictAlerts
-              conflicts={conflicts}
-              entries={entries}
-              onSelectClassToEdit={handleOpenEdit}
-            />
+          {/* RIGHT 4-COLS: Real-time conflicts and diagnostic alerts console (only visible if showDiagnostics is true) */}
+          {showDiagnostics && (
+            <div className="lg:col-span-4 sticky top-6 space-y-4 no-print animate-fadeIn">
+              <ConflictAlerts
+                conflicts={conflicts}
+                entries={entries}
+                onSelectClassToEdit={handleOpenEdit}
+              />
 
-            {/* Quick schedule checklist reference panel in Geometric Balance Theme */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-205 p-5 text-left text-xs space-y-3">
-              <h4 className="font-bold font-sans text-slate-800 flex items-center gap-1.5">
-                <BookmarkCheck className="w-4 h-4 text-indigo-650" />
-                Guía de Jornadas Oficiales:
-              </h4>
-              <p className="text-slate-500 font-sans leading-relaxed">
-                El algoritmo de detección valida automáticamente que los horarios estén asignados de lunes a sábado dentro de estos límites:
-              </p>
-              <ul className="space-y-2 font-sans text-slate-600">
-                <li className="flex items-center justify-between p-1.5 bg-sky-50/50 rounded-lg">
-                  <span className="font-bold text-sky-800">1. Jornada Mañana:</span>
-                  <span className="font-mono text-[11px] font-semibold">7:00 AM - 1:15 PM</span>
-                </li>
-                <li className="flex items-center justify-between p-1.5 bg-amber-50/50 rounded-lg">
-                  <span className="font-bold text-amber-800">2. Jornada Tarde:</span>
-                  <span className="font-mono text-[11px] font-semibold">2:00 PM - 5:00 PM</span>
-                </li>
-                <li className="flex items-center justify-between p-1.5 bg-indigo-50/55 rounded-lg border-indigo-100">
-                  <span className="font-bold text-indigo-805">3. Jornada Nocturna:</span>
-                  <span className="font-mono text-[11px] font-semibold">6:00 PM - 9:45 PM</span>
-                </li>
-              </ul>
-              <div className="p-3.5 bg-slate-50 rounded-lg text-[11px] text-slate-500 border border-slate-150 leading-snug">
-                <strong>Nota Sincronizada:</strong> Los cursos importados originalmente de la tabla PDF que inician a las <code className="bg-slate-200 px-1 rounded font-mono text-slate-700">06:00 AM</code> generarán advertencias, invitándole a resolverlas moviéndolas a bloques que comiencen a las <code className="bg-indigo-100/50 px-1 text-indigo-800 rounded font-mono font-bold">07:00 AM</code>.
+              {/* Quick schedule checklist reference panel in Geometric Balance Theme */}
+              <div className="bg-white rounded-xl shadow-sm border border-slate-205 p-5 text-left text-xs space-y-3">
+                <h4 className="font-bold font-sans text-slate-800 flex items-center gap-1.5">
+                  <BookmarkCheck className="w-4 h-4 text-indigo-650" />
+                  Guía de Jornadas Oficiales:
+                </h4>
+                <p className="text-slate-500 font-sans leading-relaxed">
+                  El algoritmo de detección valida automáticamente que los horarios estén asignados de lunes a sábado dentro de estos límites:
+                </p>
+                <ul className="space-y-2 font-sans text-slate-600">
+                  <li className="flex items-center justify-between p-1.5 bg-sky-50/50 rounded-lg">
+                    <span className="font-bold text-sky-800">1. Jornada Mañana:</span>
+                    <span className="font-mono text-[11px] font-semibold">7:00 AM - 1:15 PM</span>
+                  </li>
+                  <li className="flex items-center justify-between p-1.5 bg-amber-50/50 rounded-lg">
+                    <span className="font-bold text-amber-800">2. Jornada Tarde:</span>
+                    <span className="font-mono text-[11px] font-semibold">2:00 PM - 5:00 PM</span>
+                  </li>
+                  <li className="flex items-center justify-between p-1.5 bg-indigo-50/55 rounded-lg border-indigo-100">
+                    <span className="font-bold text-indigo-805">3. Jornada Nocturna:</span>
+                    <span className="font-mono text-[11px] font-semibold">6:00 PM - 9:45 PM</span>
+                  </li>
+                </ul>
+                <div className="p-3.5 bg-slate-50 rounded-lg text-[11px] text-slate-500 border border-slate-150 leading-snug">
+                  <strong>Nota Sincronizada:</strong> Los cursos importados originalmente de la tabla PDF que inician a las <code className="bg-slate-200 px-1 rounded font-mono text-slate-700">06:00 AM</code> generarán advertencias, invitándole a resolverlas moviéndolas a bloques que comiencen a las <code className="bg-indigo-100/50 px-1 text-indigo-800 rounded font-mono font-bold">07:00 AM</code>.
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
         </div>
 

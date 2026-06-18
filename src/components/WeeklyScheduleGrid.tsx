@@ -180,17 +180,17 @@ export default function WeeklyScheduleGrid({
                         onClick={() => onEditEntry(entry)}
                         className={`group relative p-3.5 rounded-xl border-l-4 text-left transition-all hover:scale-[1.01] hover:shadow-sm cursor-pointer ${colTheme.bg} ${colTheme.border} ${
                           hasError
-                            ? 'border-l-rose-500 ring-2 ring-rose-100'
+                            ? 'border-l-rose-500 ring-2 ring-rose-300 bg-rose-50/25'
                             : hasWarning
-                            ? 'border-l-amber-500 ring-2 ring-amber-100/50'
+                            ? 'border-l-amber-500 ring-2 ring-amber-255/45 bg-amber-50/25'
                             : 'border-l-indigo-600'
                         } ${draggedEntry?.id === entry.id ? 'opacity-40 scale-95 border-dashed border-indigo-400' : ''}`}
                       >
                         {/* Conflict Flags */}
                         {(hasError || hasWarning) && (
-                          <div className="absolute top-2 right-2 flex gap-1">
-                            {hasError && <span className="p-0.5 bg-rose-500 text-white rounded-full"><AlertTriangle className="w-3 h-3" /></span>}
-                            {!hasError && hasWarning && <span className="p-0.5 bg-amber-500 text-white rounded-full"><AlertTriangle className="w-3 h-3" /></span>}
+                          <div className="absolute top-2 right-2 flex gap-1 z-10">
+                            {hasError && <span className="p-0.5 bg-rose-500 text-white rounded-full shadow-xs" title="Tiene choques de alta gravedad"><AlertTriangle className="w-3 h-3" /></span>}
+                            {!hasError && hasWarning && <span className="p-0.5 bg-amber-500 text-white rounded-full shadow-xs" title="Advertencia de consistencia"><AlertTriangle className="w-3 h-3" /></span>}
                           </div>
                         )}
 
@@ -204,7 +204,7 @@ export default function WeeklyScheduleGrid({
                             const m = Math.floor(endMins % 60);
                             return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
                           })()}
-                          <span className="ml-1 text-slate-400">({entry.durationHours}h)</span>
+                          <span className="ml-1 text-slate-400 font-normal">({entry.durationHours}h)</span>
                         </div>
 
                         {/* Title & Code */}
@@ -221,18 +221,37 @@ export default function WeeklyScheduleGrid({
                           
                           {/* Classroom & Sede */}
                           <div className="flex items-center justify-between text-[10px] pt-1.5 border-t border-slate-205 text-slate-550">
-                            <span className="font-mono bg-slate-200/60 px-1 rounded truncate max-w-[65px] font-semibold text-slate-700">
+                            <span className="font-mono bg-slate-200/60 px-1 rounded truncate max-w-[65px] font-bold text-slate-700">
                               {entry.room || "S/A"}
                             </span>
-                            <span className="font-bold text-slate-500">{entry.group} • Sem. {entry.semester}</span>
+                            <span className="font-bold text-slate-550">{entry.group} • Sem. {entry.semester}°</span>
                           </div>
                         </div>
 
+                        {/* Detailed alert feed inside card */}
+                        {entryConflicts.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-slate-200/50 space-y-1 animate-fadeIn no-print">
+                            {entryConflicts.map((c, idx) => (
+                              <div
+                                key={idx}
+                                className={`text-[9.5px] px-2 py-1 rounded border font-sans font-medium leading-normal flex items-start gap-1 ${
+                                  c.severity === 'error'
+                                    ? 'bg-rose-50 border-rose-105 text-rose-700 font-bold'
+                                    : 'bg-amber-50 border-amber-105 text-amber-700'
+                                }`}
+                              >
+                                <span className={`w-1.5 h-1.5 rounded-full mt-1 shrink-0 ${c.severity === 'error' ? 'bg-rose-500' : 'bg-amber-400'}`}></span>
+                                <span>{c.message.includes(':') ? c.message.substring(c.message.indexOf(':') + 1).trim() : c.message}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         {/* Edit overlay indicator */}
-                        <div className="absolute inset-0 bg-indigo-600/5 opacity-0 group-hover:opacity-100 rounded-xl transition-opacity flex items-center justify-center">
+                        <div className="absolute inset-0 bg-indigo-600/5 opacity-0 group-hover:opacity-100 rounded-xl transition-opacity flex items-center justify-center pointer-events-none">
                           <span className="bg-white/95 px-2 py-1 rounded shadow-sm text-[10px] font-bold text-indigo-700 flex items-center gap-1 border border-indigo-100">
                             <Edit2 className="w-2.5 h-2.5" />
-                            Editar
+                            Editar clase o arrastrar
                           </span>
                         </div>
                       </div>
@@ -394,7 +413,8 @@ export default function WeeklyScheduleGrid({
                                     border: 'border-slate-200'
                                   };
                                   const entryConflicts = getEntryConflicts(entry.id);
-                                  const isClashed = entryConflicts.some(c => c.severity === 'error');
+                                  const hasError = entryConflicts.some(c => c.severity === 'error');
+                                  const hasWarning = entryConflicts.some(c => c.severity === 'warning');
 
                                   return (
                                     <div
@@ -404,20 +424,56 @@ export default function WeeklyScheduleGrid({
                                       onDragEnd={handleDragEnd}
                                       onClick={() => onEditEntry(entry)}
                                       className={`group p-2 rounded-lg text-left text-[11px] leading-snug border transition-all cursor-pointer shadow-xs ${colTheme.bg} ${colTheme.border} hover:scale-[1.01] ${
-                                        isClashed ? 'ring-2 ring-rose-200 border-rose-300' : ''
+                                        hasError 
+                                          ? 'ring-2 ring-rose-400 border-rose-500 bg-rose-50/40' 
+                                          : hasWarning 
+                                          ? 'ring-2 ring-amber-350 border-amber-450 bg-amber-50/20'
+                                          : ''
                                       } ${draggedEntry?.id === entry.id ? 'opacity-30 scale-95 border-dashed border-indigo-400' : ''}`}
                                     >
                                       <div className="flex items-center justify-between text-[8px] font-mono font-bold text-slate-400">
-                                        <span>{entry.startTime} {isClashed && '⚠️'}</span>
-                                        <span>Sem. {entry.semester} {entry.group}</span>
+                                        <span className="flex items-center gap-1">
+                                          {entry.startTime}
+                                          {hasError && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>}
+                                          {!hasError && hasWarning && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                                        </span>
+                                        <span>Sem. {entry.semester}° {entry.group}</span>
                                       </div>
-                                      <div className="font-bold text-slate-800 line-clamp-1 mt-0.5 group-hover:text-indigo-650 transition-colors">
-                                        {entry.subject}
+                                      <div className="font-bold text-slate-800 line-clamp-1 mt-0.5 group-hover:text-indigo-650 transition-colors flex items-center justify-between gap-1">
+                                        <span className="truncate">{entry.subject}</span>
+                                        {(hasError || hasWarning) && (
+                                          <AlertTriangle className={`w-3 h-3 shrink-0 ${hasError ? 'text-rose-600' : 'text-amber-500'}`} />
+                                        )}
                                       </div>
-                                      <div className="text-[9px] text-slate-500 flex items-center justify-between mt-1 pt-1 border-t border-slate-100">
+                                      <div className="text-[9px] text-slate-505 flex items-center justify-between mt-1 pt-1 border-t border-slate-200/50">
                                         <span className="truncate max-w-[55px] font-medium">{entry.teacher.split(' ').slice(-1)[0]}</span>
-                                        <span className="font-mono bg-slate-200/50 px-1 rounded text-[8px] truncate max-w-[45px] font-bold text-slate-650">{entry.room}</span>
+                                        <span className="font-mono bg-slate-205/65 px-1 rounded text-[8px] truncate max-w-[45px] font-bold text-slate-700">{entry.room}</span>
                                       </div>
+
+                                      {/* High-visibility inline tags inside grid cell block */}
+                                      {entryConflicts.length > 0 && (
+                                        <div className="mt-1.5 pt-1 border-t border-slate-200/50 flex flex-wrap gap-0.5 no-print">
+                                          {entryConflicts.map((c, ix) => {
+                                            const typeLabel = c.type === 'TEACHER' ? 'Docente' : 
+                                                              c.type === 'ROOM' ? 'Aula' : 
+                                                              c.type === 'OUT_OF_SHIFT' ? 'Jornada' : 
+                                                              c.type === 'GROUP' ? 'Cruce Int.' : 'Hueco';
+                                            return (
+                                              <span 
+                                                key={ix} 
+                                                className={`text-[7px] font-extrabold uppercase tracking-wide px-1 py-0.5 rounded leading-none ${
+                                                  c.severity === 'error' 
+                                                    ? 'bg-rose-100/90 text-rose-800 border border-rose-200/60' 
+                                                    : 'bg-amber-100/90 text-amber-800 border border-amber-200/60'
+                                                }`}
+                                                title={c.message}
+                                              >
+                                                ⚠️ {typeLabel}
+                                              </span>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
