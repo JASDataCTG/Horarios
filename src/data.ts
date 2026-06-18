@@ -127,10 +127,17 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
           });
         }
       } else if (entry.semester >= 6 && entry.semester <= 9) {
-        if (shift === 'morning' || shift === 'afternoon') {
+        if (shift === 'afternoon') {
           conflicts.push({
             type: 'OUT_OF_SHIFT',
-            message: `Jornada Incorrecta: El semestre ${entry.semester} (6to a 9no) debe programarse en la jornada nocturna, pero está en la jornada ${shift === 'morning' ? 'Mañana' : 'Tarde'} (${entry.startTime}).`,
+            message: `Jornada Excepcional (Manual): El semestre ${entry.semester} (6to a 9no) está programado en la jornada de la tarde (${entry.startTime}). Se permite excepcionalmente como opción de asignación manual.`,
+            involvedIds: [entry.id],
+            severity: 'warning'
+          });
+        } else if (shift === 'morning') {
+          conflicts.push({
+            type: 'OUT_OF_SHIFT',
+            message: `Jornada Incorrecta: El semestre ${entry.semester} (6to a 9no) NO puede programarse en la jornada de la mañana (${entry.startTime}).`,
             involvedIds: [entry.id],
             severity: 'error'
           });

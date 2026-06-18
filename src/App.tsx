@@ -1824,8 +1824,13 @@ export default function App() {
                       <span className="font-mono text-[11px] font-semibold">6:00 PM - 9:45 PM</span>
                     </li>
                   </ul>
-                  <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-lg text-[11px] text-emerald-805 leading-snug">
-                    <strong className="text-emerald-900">🎓 Semestres 1 y 2:</strong> Programados estrictamente en la <strong>Mañana</strong> por el algoritmo automático. Se permiten pocas excepciones manuales en la <strong>Tarde</strong> (marcada como advertencia).
+                  <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-lg text-[11px] text-emerald-805 space-y-1.5 leading-snug">
+                    <div>
+                      <strong className="text-emerald-900">🎓 Semestres 1 y 2:</strong> Programados estrictamente en la <strong>Mañana</strong> por el algoritmo automático. Se permiten pocas excepciones manuales en la <strong>Tarde</strong> (marcada como advertencia).
+                    </div>
+                    <div className="border-t border-emerald-200/50 pt-1.5">
+                      <strong className="text-emerald-900">🌙 Semestres 6 a 9 (Nocturnos):</strong> Programados estrictamente en la <strong>Noche</strong> por el algoritmo automático. Se permite excepcionalmente moverlos a la <strong>Tarde</strong> de manera manual (marcada como advertencia).
+                    </div>
                   </div>
                   <div className="p-3 bg-slate-50 rounded-lg text-[11px] text-slate-500 border border-slate-150 leading-snug">
                     <strong>Nota Sincronizada:</strong> Los cursos importados originalmente de la tabla PDF que inician a las <code className="bg-slate-200 px-1 rounded font-mono text-slate-705">06:00 AM</code> generarán advertencias, invitándole a resolverlas moviéndolas a bloques que comiencen a las <code className="bg-indigo-100/50 px-1 text-indigo-800 rounded font-mono font-bold">07:00 AM</code>.
