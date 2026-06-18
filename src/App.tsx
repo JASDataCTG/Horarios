@@ -162,13 +162,20 @@ export default function App() {
   };
 
   const handleExportJSON = () => {
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(entries, null, 2));
-    const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", "programacion_horarios_universidad.json");
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+    try {
+      const jsonStr = JSON.stringify(entries, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", url);
+      downloadAnchor.setAttribute("download", "respaldo_localstorage_horarios.json");
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert('Error al exportar la información del localStorage.');
+    }
   };
 
   const handleImportJSON = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -182,15 +189,16 @@ export default function App() {
         const parsed = JSON.parse(result);
         if (Array.isArray(parsed)) {
           saveEntries(parsed);
-          alert('¡Sincronización Exitosa! Horarios cargados correctamente desde el respaldo.');
+          alert('¡Sincronización Exitosa! Toda la información del localStorage fue restaurada exitosamente.');
         } else {
-          alert('El archivo no tiene el formato correcto (debe ser un arreglo JSON de clases).');
+          alert('El archivo no tiene el formato correcto (debe ser un arreglo JSON con la programación).');
         }
       } catch (err) {
-        alert('Error al leer el archivo JSON.');
+        alert('Error al leer el archivo de base de datos local JSON.');
       }
     };
     reader.readAsText(file);
+    event.target.value = ''; // Reset input to allow double uploads of the same file
   };
 
   // --- EXCEL CSV COMPATIBILITY GENERATOR ---
@@ -335,20 +343,20 @@ export default function App() {
             {/* Backups buttons */}
             <button
               onClick={handleExportJSON}
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg text-slate-700 transition-all cursor-pointer border border-slate-200"
-              title="Descargar base de datos local en JSON"
+              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-xs font-bold rounded-lg text-indigo-700 transition-all cursor-pointer border border-indigo-200"
+              title="Descargar respaldo completo de la base de datos de horarios (localStorage) en formato JSON"
             >
-              <Download className="w-4 h-4 text-sky-600" />
-              <span>Descargar JSON</span>
+              <Download className="w-4 h-4 text-indigo-600 animate-pulse" />
+              <span>Exportar LocalStorage (JSON)</span>
             </button>
 
             <button
               onClick={() => uploadInputRef.current?.click()}
               className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg text-slate-700 transition-all cursor-pointer border border-slate-200"
-              title="Cargar archivo JSON guardado"
+              title="Cargar y restaurar respaldo completo de horarios en el localStorage de este navegador"
             >
               <Upload className="w-4 h-4 text-purple-600" />
-              <span>Cargar JSON</span>
+              <span>Importar LocalStorage (JSON)</span>
             </button>
 
             <input

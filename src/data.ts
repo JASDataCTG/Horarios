@@ -161,12 +161,12 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
         });
       }
 
-      // Conflict 4: Cruces de horas en el mismo semestre
-      // Rule: No puede haber cruces de horas en el mismo semestre
-      if (e1.semester === e2.semester && e1.group !== 'SG' && e2.group !== 'SG' && e1.teacher !== 'INSTITUCIONAL' && e2.teacher !== 'INSTITUCIONAL') {
+      // Conflict 4: Cruces de horas en el mismo semestre y grupo
+      // Rule: No puede haber cruces de horas en el mismo semestre y grupo académico
+      if (e1.semester === e2.semester && e1.group === e2.group && e1.group !== 'SG' && e2.group !== 'SG' && e1.teacher !== 'INSTITUCIONAL' && e2.teacher !== 'INSTITUCIONAL') {
         conflicts.push({
           type: 'GROUP',
-          message: `Conflicto Semestre: El Semestre ${e1.semester} tiene cruce de clases el ${e1.day} entre "${e1.subject}" (${e1.startTime}) y "${e2.subject}" (${e2.startTime}).`,
+          message: `Conflicto Semestre: El Semestre ${e1.semester} de grupo ${e1.group} tiene cruce de clases el ${e1.day} entre "${e1.subject}" (${e1.startTime}) y "${e2.subject}" (${e2.startTime}).`,
           involvedIds: [e1.id, e2.id],
           severity: 'error'
         });
@@ -174,11 +174,11 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
     }
   }
 
-  // 5. Gaps between classes of the same semester on the same day
+  // 5. Gaps between classes of the same semester and group on the same day
   const semesterDayEntries: Record<string, ScheduleEntry[]> = {};
   entries.forEach(entry => {
     if (entry.group === 'SG' || entry.teacher === 'INSTITUCIONAL') return;
-    const key = `${entry.semester}-${entry.day}`;
+    const key = `${entry.semester}-${entry.group}-${entry.day}`;
     if (!semesterDayEntries[key]) {
       semesterDayEntries[key] = [];
     }
@@ -187,7 +187,9 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
 
   Object.entries(semesterDayEntries).forEach(([key, dayEntries]) => {
     if (dayEntries.length <= 1) return;
-    const sem = parseInt(key.split('-')[0], 10);
+    const parts = key.split('-');
+    const sem = parseInt(parts[0], 10);
+    const grp = parts[1];
     const sorted = [...dayEntries].sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
     for (let k = 0; k < sorted.length - 1; k++) {
       const e1 = sorted[k];
@@ -198,7 +200,7 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
       if (gapMins > 45) {
         conflicts.push({
           type: 'GAP',
-          message: `Tiempo Libre Excesivo: Espera larga de ${gapMins} min el ${e1.day} para el Semestre ${sem} entre "${e1.subject}" y "${e2.subject}".`,
+          message: `Tiempo Libre Excesivo: Espera larga de ${gapMins} min el ${e1.day} para el Semestre ${sem} (Grupo ${grp}) entre "${e1.subject}" y "${e2.subject}".`,
           involvedIds: [e1.id, e2.id],
           severity: 'warning'
         });
@@ -244,14 +246,15 @@ function solveGroup(
   const ASSIGNABLE_CLASSROOMS = ['QuantumX', 'QuantumBeta', 'QuantumAlpha', 'Matrix', 'Horizons', 'Sala ocasional', 'Institucional'];
 
   // Occupancy grids (mapped relative to DAYS & unified block indices in a day)
-  const semesterOccupancy: Record<number, Record<string, boolean[]>> = {};
+  const semesterOccupancy: Record<string, Record<string, boolean[]>> = {};
   const roomOccupancy: Record<string, Record<string, boolean[]>> = {};
   const teacherOccupancy: Record<string, Record<string, boolean[]>> = {};
 
-  const getSemesterDayBlocks = (sem: number, day: string) => {
-    if (!semesterOccupancy[sem]) semesterOccupancy[sem] = {};
-    if (!semesterOccupancy[sem][day]) semesterOccupancy[sem][day] = new Array(24).fill(false);
-    return semesterOccupancy[sem][day];
+  const getSemesterDayBlocks = (sem: number, group: string, day: string) => {
+    const key = `${sem}-${group}`;
+    if (!semesterOccupancy[key]) semesterOccupancy[key] = {};
+    if (!semesterOccupancy[key][day]) semesterOccupancy[key][day] = new Array(24).fill(false);
+    return semesterOccupancy[key][day];
   };
 
   const getRoomDayBlocks = (room: string, day: string) => {
@@ -280,7 +283,7 @@ function solveGroup(
     numBlocks: number,
     room: string
   ): boolean => {
-    const semBlocks = getSemesterDayBlocks(entry.semester, day);
+    const semBlocks = getSemesterDayBlocks(entry.semester, entry.group, day);
     const rBlocks = getRoomDayBlocks(room, day);
     const tBlocks = entry.teacher !== 'INSTITUCIONAL' ? getTeacherDayBlocks(entry.teacher, day) : null;
 
@@ -302,7 +305,7 @@ function solveGroup(
     room: string,
     status: boolean
   ) => {
-    const semBlocks = getSemesterDayBlocks(entry.semester, day);
+    const semBlocks = getSemesterDayBlocks(entry.semester, entry.group, day);
     const rBlocks = getRoomDayBlocks(room, day);
     const tBlocks = entry.teacher !== 'INSTITUCIONAL' ? getTeacherDayBlocks(entry.teacher, day) : null;
 
@@ -330,7 +333,7 @@ function solveGroup(
     const uStart = getUnifiedIndex(shift, startBlock);
     const uEnd = uStart + numBlocks - 1;
 
-    const semBlocks = getSemesterDayBlocks(entry.semester, day);
+    const semBlocks = getSemesterDayBlocks(entry.semester, entry.group, day);
     const occupiedIndices: number[] = [];
     for (let j = 0; j < semBlocks.length; j++) {
       if (semBlocks[j]) {
