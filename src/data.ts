@@ -90,12 +90,19 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
       }
 
       // Rule: Los semestres 1er y 2do semestre deben programarse en la mañana.
-      // Los semestres 3ro a 5to de mañana o tarde, y de 6to a 9no en la jornada nocturna.
+      // Excepcionalmente se pueden programar pocas clases en la tarde (permitido solo manualmente como advertencia/warning).
       if (entry.semester === 1 || entry.semester === 2) {
-        if (shift !== 'morning') {
+        if (shift === 'afternoon') {
           conflicts.push({
             type: 'OUT_OF_SHIFT',
-            message: `Jornada Incorrecta: El semestre ${entry.semester} (1to y 2do) debe programarse obligatoriamente en la jornada de la mañana (7:00 AM - 1:15 PM), pero se encuentra en ${shift === 'afternoon' ? 'Tarde' : 'Nocturna'} (${entry.startTime}).`,
+            message: `Jornada Excepcional (Manual): El semestre ${entry.semester} (1er y 2do) está programado en la jornada de la tarde (${entry.startTime}). Se permite solo excepcionalmente como opción de asignación manual.`,
+            involvedIds: [entry.id],
+            severity: 'warning'
+          });
+        } else if (shift === 'evening') {
+          conflicts.push({
+            type: 'OUT_OF_SHIFT',
+            message: `Jornada Incorrecta: El semestre ${entry.semester} (1er y 2do) NO puede programarse en la jornada nocturna (${entry.startTime}).`,
             involvedIds: [entry.id],
             severity: 'error'
           });

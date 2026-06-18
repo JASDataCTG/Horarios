@@ -1811,21 +1811,24 @@ export default function App() {
                     El algoritmo de detección valida automáticamente que los horarios estén asignados de lunes a sábado dentro de estos límites:
                   </p>
                   <ul className="space-y-2 font-sans text-slate-600">
-                    <li className="flex items-center justify-between p-1.5 bg-sky-50/50 rounded-lg">
+                    <li className="flex items-center justify-between p-1.5 bg-sky-50/50 rounded-lg border border-sky-100/40">
                       <span className="font-bold text-sky-800">1. Jornada Mañana:</span>
                       <span className="font-mono text-[11px] font-semibold">7:00 AM - 1:15 PM</span>
                     </li>
-                    <li className="flex items-center justify-between p-1.5 bg-amber-50/50 rounded-lg">
+                    <li className="flex items-center justify-between p-1.5 bg-amber-50/50 rounded-lg border border-amber-100/40">
                       <span className="font-bold text-amber-800">2. Jornada Tarde:</span>
                       <span className="font-mono text-[11px] font-semibold">2:00 PM - 5:00 PM</span>
                     </li>
-                    <li className="flex items-center justify-between p-1.5 bg-indigo-50/55 rounded-lg border-indigo-100">
+                    <li className="flex items-center justify-between p-1.5 bg-indigo-50/55 rounded-lg border border-indigo-100/40">
                       <span className="font-bold text-indigo-805">3. Jornada Nocturna:</span>
                       <span className="font-mono text-[11px] font-semibold">6:00 PM - 9:45 PM</span>
                     </li>
                   </ul>
-                  <div className="p-3.5 bg-slate-50 rounded-lg text-[11px] text-slate-500 border border-slate-150 leading-snug">
-                    <strong>Nota Sincronizada:</strong> Los cursos importados originalmente de la tabla PDF que inician a las <code className="bg-slate-200 px-1 rounded font-mono text-slate-700">06:00 AM</code> generarán advertencias, invitándole a resolverlas moviéndolas a bloques que comiencen a las <code className="bg-indigo-100/50 px-1 text-indigo-800 rounded font-mono font-bold">07:00 AM</code>.
+                  <div className="p-3 bg-emerald-50/60 border border-emerald-100 rounded-lg text-[11px] text-emerald-805 leading-snug">
+                    <strong className="text-emerald-900">🎓 Semestres 1 y 2:</strong> Programados estrictamente en la <strong>Mañana</strong> por el algoritmo automático. Se permiten pocas excepciones manuales en la <strong>Tarde</strong> (marcada como advertencia).
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-lg text-[11px] text-slate-500 border border-slate-150 leading-snug">
+                    <strong>Nota Sincronizada:</strong> Los cursos importados originalmente de la tabla PDF que inician a las <code className="bg-slate-200 px-1 rounded font-mono text-slate-705">06:00 AM</code> generarán advertencias, invitándole a resolverlas moviéndolas a bloques que comiencen a las <code className="bg-indigo-100/50 px-1 text-indigo-800 rounded font-mono font-bold">07:00 AM</code>.
                   </div>
                 </div>
               </div>
