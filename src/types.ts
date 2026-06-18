@@ -19,6 +19,25 @@ export interface ScheduleEntry {
   observation?: string; // Observation notes
 }
 
+export interface DBSubject {
+  code: string;
+  name: string;
+  intensity: number;
+  hours_theory: number;
+  hours_practice: number;
+  department: string;
+}
+
+export interface DBClassroom {
+  name: string;
+  location: string;
+}
+
+export interface DBTeacher {
+  name: string;
+  department: string;
+}
+
 export type ShiftType = 'morning' | 'afternoon' | 'evening' | 'all';
 
 export interface ScheduleConflict {
@@ -27,3 +46,4 @@ export interface ScheduleConflict {
   involvedIds: string[];
   severity: 'error' | 'warning';
 }
+

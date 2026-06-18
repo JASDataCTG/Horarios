@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { ScheduleEntry } from '../types';
+import { ScheduleEntry, DBSubject, DBClassroom, DBTeacher } from '../types';
 
 const supabaseUrl = ((import.meta as any).env?.VITE_SUPABASE_URL || '').trim();
 const supabaseAnonKey = ((import.meta as any).env?.VITE_SUPABASE_ANON_KEY || '').trim();
@@ -22,6 +22,213 @@ try {
 }
 
 export const supabase = supabaseInstance;
+
+
+/**
+ * Fetch all subjects from Supabase
+ */
+export async function getSupabaseSubjects(): Promise<DBSubject[] | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('subjects')
+      .select('*')
+      .order('name', { ascending: true });
+    if (error) {
+      console.warn('Error fetching subjects from Supabase, table might not exist yet:', error);
+      return null;
+    }
+    return (data || []).map((item: any) => ({
+      code: String(item.code),
+      name: String(item.name),
+      intensity: Number(item.intensity || 0),
+      hours_theory: Number(item.hours_theory || 0),
+      hours_practice: Number(item.hours_practice || 0),
+      department: String(item.department || 'INGENIERÍA')
+    }));
+  } catch (err) {
+    console.error('Failed to get Supabase subjects:', err);
+    return null;
+  }
+}
+
+/**
+ * Save / Upsert a single subject
+ */
+export async function saveSupabaseSubject(subject: DBSubject): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await (supabase.from('subjects') as any).upsert({
+      code: subject.code,
+      name: subject.name,
+      intensity: Number(subject.intensity || 0),
+      hours_theory: Number(subject.hours_theory || 0),
+      hours_practice: Number(subject.hours_practice || 0),
+      department: subject.department || 'INGENIERÍA'
+    });
+    if (error) {
+      console.error('Error saving subject to Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to save subject to Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Delete a subject
+ */
+export async function deleteSupabaseSubject(code: string): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('subjects')
+      .delete()
+      .eq('code', code);
+    if (error) {
+      console.error('Error deleting subject in Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to delete subject in Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch all classrooms from Supabase
+ */
+export async function getSupabaseClassrooms(): Promise<DBClassroom[] | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('classrooms')
+      .select('*')
+      .order('name', { ascending: true });
+    if (error) {
+      console.warn('Error fetching classrooms from Supabase:', error);
+      return null;
+    }
+    return (data || []).map((item: any) => ({
+      name: String(item.name),
+      location: String(item.location || 'RN')
+    }));
+  } catch (err) {
+    console.error('Failed to get Supabase classrooms:', err);
+    return null;
+  }
+}
+
+/**
+ * Save / Upsert a single classroom
+ */
+export async function saveSupabaseClassroom(classroom: DBClassroom): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await (supabase.from('classrooms') as any).upsert({
+      name: classroom.name,
+      location: classroom.location || 'RN'
+    });
+    if (error) {
+      console.error('Error saving classroom to Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to save classroom to Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Delete a classroom
+ */
+export async function deleteSupabaseClassroom(name: string): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('classrooms')
+      .delete()
+      .eq('name', name);
+    if (error) {
+      console.error('Error deleting classroom in Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to delete classroom in Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch all teachers from Supabase
+ */
+export async function getSupabaseTeachers(): Promise<DBTeacher[] | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('teachers')
+      .select('*')
+      .order('name', { ascending: true });
+    if (error) {
+      console.warn('Error fetching teachers from Supabase:', error);
+      return null;
+    }
+    return (data || []).map((item: any) => ({
+      name: String(item.name),
+      department: String(item.department || '')
+    }));
+  } catch (err) {
+    console.error('Failed to get Supabase teachers:', err);
+    return null;
+  }
+}
+
+/**
+ * Save / Upsert a single teacher
+ */
+export async function saveSupabaseTeacher(teacher: DBTeacher): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await (supabase.from('teachers') as any).upsert({
+      name: teacher.name,
+      department: teacher.department || ''
+    });
+    if (error) {
+      console.error('Error saving teacher to Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to save teacher to Supabase:', err);
+    return false;
+  }
+}
+
+/**
+ * Delete a teacher
+ */
+export async function deleteSupabaseTeacher(name: string): Promise<boolean> {
+  if (!supabase) return false;
+  try {
+    const { error } = await supabase
+      .from('teachers')
+      .delete()
+      .eq('name', name);
+    if (error) {
+      console.error('Error deleting teacher in Supabase:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('Failed to delete teacher in Supabase:', err);
+    return false;
+  }
+}
 
 /**
  * Fetch all entries from relational Supabase database with joins.

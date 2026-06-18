@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Save, Trash2, Calendar, Clock, MapPin, User, GraduationCap, AlertTriangle } from 'lucide-react';
-import { ScheduleEntry } from '../types';
-import { DAYS, CLASSROOMS, LOCATIONS, DEPARTMENTS } from '../data';
+import { ScheduleEntry, DBSubject, DBClassroom, DBTeacher } from '../types';
+import { DAYS, LOCATIONS, DEPARTMENTS } from '../data';
 
 interface ClassModalProps {
   isOpen: boolean;
@@ -12,6 +12,9 @@ interface ClassModalProps {
   entryToEdit?: ScheduleEntry | null;
   // To perform instant conflict checking
   allEntries: ScheduleEntry[];
+  subjects: DBSubject[];
+  teachers: DBTeacher[];
+  classrooms: DBClassroom[];
 }
 
 export default function ClassModal({
@@ -20,7 +23,10 @@ export default function ClassModal({
   onSave,
   onDelete,
   entryToEdit,
-  allEntries
+  allEntries,
+  subjects,
+  teachers,
+  classrooms
 }: ClassModalProps) {
   const [formData, setFormData] = useState<Omit<ScheduleEntry, 'id'>>({
     semester: 1,
@@ -263,29 +269,55 @@ export default function ClassModal({
 
               {/* Grid block 1: Basic Course Info */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                <div className="md:col-span-3">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-1">Cód. Asignatura</label>
-                  <input
-                    type="text"
+                <div className="md:col-span-12">
+                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-1">
+                    Seleccionar Asignatura de la Base de Datos *
+                  </label>
+                  <select
                     name="code"
-                    value={formData.code}
-                    onChange={handleChange}
-                    placeholder="E.g., 3198"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-teal-500 text-sm"
-                  />
-                </div>
-                <div className="md:col-span-9">
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-1">Nombre de Asignatura *</label>
-                  <input
-                    type="text"
-                    name="subject"
                     required
-                    value={formData.subject}
-                    onChange={handleChange}
-                    placeholder="E.g., PROGRAMACIÓN DE BASES DE DATOS"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-teal-500 text-sm"
-                  />
+                    value={formData.code}
+                    onChange={(e) => {
+                      const selectedCode = e.target.value;
+                      const matchedSub = subjects.find(s => s.code === selectedCode);
+                      if (matchedSub) {
+                        setFormData(prev => ({
+                          ...prev,
+                          code: matchedSub.code,
+                          subject: matchedSub.name,
+                          intensity: matchedSub.intensity,
+                          hoursTheory: matchedSub.hours_theory,
+                          hoursPractice: matchedSub.hours_practice,
+                          department: matchedSub.department
+                        }));
+                      } else {
+                        setFormData(prev => ({
+                          ...prev,
+                          code: '',
+                          subject: ''
+                        }));
+                      }
+                    }}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-teal-500 text-sm bg-white font-medium"
+                  >
+                    <option value="">-- Seleccione una asignatura de la base de datos --</option>
+                    {subjects.map(sub => (
+                      <option key={sub.code} value={sub.code}>
+                        [{sub.code}] {sub.name} ({sub.department})
+                      </option>
+                    ))}
+                  </select>
                 </div>
+                {formData.code && (
+                  <div className="md:col-span-12 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-slate-700">Asignatura seleccionada:</span> {formData.subject} <span className="text-[10px] bg-slate-200 text-slate-750 px-1.5 py-0.5 rounded font-mono">Cód: {formData.code}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 italic">
+                      Intensidad original: {formData.intensity}h
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Grid block 2: Semester, Group, Dept */}
@@ -421,28 +453,44 @@ export default function ClassModal({
                   </select>
                 </div>
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-1">Aula Requerida (Salon)</label>
+                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-1">Aula Requerida (Salon) *</label>
                   <select
                     name="room"
                     value={formData.room}
-                    onChange={handleChange}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-teal-500 text-sm bg-white"
+                    onChange={(e) => {
+                      const selectedRoomName = e.target.value;
+                      const matchedRm = classrooms.find(r => r.name === selectedRoomName);
+                      setFormData(prev => ({
+                        ...prev,
+                        room: selectedRoomName,
+                        location: matchedRm ? matchedRm.location : prev.location
+                      }));
+                    }}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-teal-500 text-sm bg-white font-medium"
                   >
-                    {CLASSROOMS.map(cl => (
-                      <option key={cl} value={cl}>{cl}</option>
+                    <option value="Por asignar">Por asignar</option>
+                    {classrooms.map(cl => (
+                      <option key={cl.name} value={cl.name}>
+                        {cl.name} (Sede: {cl.location})
+                      </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-1">Docente Asignado</label>
-                  <input
-                    type="text"
+                  <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-1">Docente Asignado *</label>
+                  <select
                     name="teacher"
                     value={formData.teacher}
                     onChange={handleChange}
-                    placeholder="Nombre del docente"
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-teal-500 text-sm"
-                  />
+                    className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-teal-500 text-sm bg-white font-medium"
+                  >
+                    <option value="INSTITUCIONAL">INSTITUCIONAL</option>
+                    {teachers.map(tch => (
+                      <option key={tch.name} value={tch.name}>
+                        {tch.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
