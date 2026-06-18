@@ -1,0 +1,6 @@
+{
+  "name": "Planificador de Horarios",
+  "description": "Aplicación interactiva para organizar y programar los horarios universitarios de lunes a sábado, con detección de choques y visualización por jornadas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
