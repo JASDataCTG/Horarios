@@ -281,6 +281,11 @@ export default function ClassModal({
                       const selectedCode = e.target.value;
                       const matchedSub = subjects.find(s => s.code === selectedCode);
                       if (matchedSub) {
+                        // Calculate weekly academic hours (e.g. 32h / 16 weeks = 2h weekly)
+                        const weeklyAcademics = Math.max(1, Math.round(matchedSub.intensity / 16));
+                        // Translate to clock hours (1 academic hour = 45 min = 0.75 clock hours)
+                        const defaultClockDuration = weeklyAcademics * 0.75;
+
                         setFormData(prev => ({
                           ...prev,
                           code: matchedSub.code,
@@ -288,7 +293,8 @@ export default function ClassModal({
                           intensity: matchedSub.intensity,
                           hoursTheory: matchedSub.hours_theory,
                           hoursPractice: matchedSub.hours_practice,
-                          department: matchedSub.department
+                          department: matchedSub.department,
+                          durationHours: defaultClockDuration
                         }));
                       } else {
                         setFormData(prev => ({
@@ -419,20 +425,59 @@ export default function ClassModal({
                     </div>
                   </div>
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-1 flex items-center justify-between">
-                      <span>Duración (Horas)</span>
-                      <span className="text-teal-600 font-mono">{(formData.durationHours * 60)} min</span>
+                    <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide block mb-1">
+                      Duración de la Sesión
                     </label>
-                    <input
-                      type="number"
-                      step="0.25"
-                      name="durationHours"
-                      value={formData.durationHours}
-                      onChange={handleChange}
-                      min="0.5"
-                      max="6"
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-teal-600 text-sm font-mono"
-                    />
+                    <select
+                      value={
+                        [0.75, 1.5, 2.25, 3.0, 3.75, 4.5].some(v => Math.abs(v - formData.durationHours) < 0.01)
+                          ? (() => {
+                              const match = [0.75, 1.5, 2.25, 3.0, 3.75, 4.5].find(v => Math.abs(v - formData.durationHours) < 0.01);
+                              return match ? match.toString() : 'custom';
+                            })()
+                          : 'custom'
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val !== 'custom') {
+                          setFormData(prev => ({ ...prev, durationHours: parseFloat(val) }));
+                        }
+                      }}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 outline-none focus:border-teal-600 text-sm bg-white font-medium"
+                    >
+                      <option value="0.75">1 Hora Académica (45 min de reloj)</option>
+                      <option value="1.5">2 Horas Académicas (1.5 horas / 90 min) [Recomendado]</option>
+                      <option value="2.25">3 Horas Académicas (2.25 horas / 135 min)</option>
+                      <option value="3.0">4 Horas Académicas (3.0 horas / 180 min)</option>
+                      <option value="3.75">5 Horas Académicas (3.75 horas / 225 min)</option>
+                      <option value="4.5">6 Horas Académicas (4.5 horas / 270 min)</option>
+                      <option value="custom">-- Personalizado (Ingresar horas manualmente) --</option>
+                    </select>
+
+                    {/* Show manual hours input if custom is chosen or value is non-standard */}
+                    {!([0.75, 1.5, 2.25, 3.0, 3.75, 4.5].some(v => Math.abs(v - formData.durationHours) < 0.01)) && (
+                      <div className="mt-2 text-left animate-fadeIn">
+                        <label className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wide block mb-1">
+                          Horas de Reloj (60 min)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.25"
+                          name="durationHours"
+                          value={formData.durationHours}
+                          onChange={handleChange}
+                          min="0.5"
+                          max="8"
+                          className="w-full px-3 py-1.5 rounded-lg border border-slate-200 outline-none focus:border-teal-600 text-xs font-mono"
+                        />
+                      </div>
+                    )}
+
+                    {/* Dynamic conversion explanation indicator */}
+                    <div className="mt-1.5 p-1.5 px-2 bg-slate-50 border border-slate-200/40 rounded-md flex items-center justify-between text-[10px] font-medium text-slate-600 font-sans">
+                      <span>Equivale a: <strong className="text-teal-600">{(formData.durationHours / 0.75).toFixed(2)} Horas Académicas</strong></span>
+                      <span className="font-mono text-slate-400">Total: {Math.round(formData.durationHours * 60)} min de reloj</span>
+                    </div>
                   </div>
                 </div>
               </div>

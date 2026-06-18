@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
-import { ScheduleEntry } from '../types';
+import { ScheduleEntry, DBClassroom } from '../types';
 import { DAYS, CLASSROOMS } from '../data';
 import { Home, Info, BookOpen, Clock } from 'lucide-react';
 
 interface ClassroomMatrixProps {
   entries: ScheduleEntry[];
+  classrooms?: DBClassroom[];
   onSelectEntry: (entry: ScheduleEntry) => void;
 }
 
-export default function ClassroomMatrix({ entries, onSelectEntry }: ClassroomMatrixProps) {
+export default function ClassroomMatrix({ entries, classrooms, onSelectEntry }: ClassroomMatrixProps) {
   const [selectedRoom, setSelectedRoom] = useState<string>('all');
 
-  // Rooms list derived from static options
-  const activeRooms = CLASSROOMS;
+  // Rooms list derived from dynamic classrooms state with static fallback
+  const activeRooms = classrooms && classrooms.length > 0 
+    ? Array.from(new Set([...classrooms.map(c => c.name), 'Por asignar', 'Institucional']))
+    : CLASSROOMS;
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">

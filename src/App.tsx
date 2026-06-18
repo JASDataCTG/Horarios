@@ -119,10 +119,38 @@ const classroomsSeed = [
 
 export default function App() {
   // --- STATE ---
-  const [entries, setEntries] = useState<ScheduleEntry[]>(INITIAL_ENTRIES);
-  const [subjects, setSubjects] = useState<DBSubject[]>(() => getInitialSubjects());
-  const [teachers, setTeachers] = useState<DBTeacher[]>(() => getInitialTeachers());
-  const [classrooms, setClassrooms] = useState<DBClassroom[]>(() => getInitialClassrooms());
+  const [entries, setEntries] = useState<ScheduleEntry[]>(() => {
+    try {
+      const stored = localStorage.getItem('pca_entries');
+      return stored ? JSON.parse(stored) : INITIAL_ENTRIES;
+    } catch {
+      return INITIAL_ENTRIES;
+    }
+  });
+  const [subjects, setSubjects] = useState<DBSubject[]>(() => {
+    try {
+      const stored = localStorage.getItem('pca_subjects');
+      return stored ? JSON.parse(stored) : getInitialSubjects();
+    } catch {
+      return getInitialSubjects();
+    }
+  });
+  const [teachers, setTeachers] = useState<DBTeacher[]>(() => {
+    try {
+      const stored = localStorage.getItem('pca_teachers');
+      return stored ? JSON.parse(stored) : getInitialTeachers();
+    } catch {
+      return getInitialTeachers();
+    }
+  });
+  const [classrooms, setClassrooms] = useState<DBClassroom[]>(() => {
+    try {
+      const stored = localStorage.getItem('pca_classrooms');
+      return stored ? JSON.parse(stored) : getInitialClassrooms();
+    } catch {
+      return getInitialClassrooms();
+    }
+  });
 
   // Related CRUD tab states
   const [crudSubTab, setCrudSubTab] = useState<'entries' | 'subjects' | 'teachers' | 'classrooms'>('entries');
@@ -252,6 +280,11 @@ export default function App() {
   // Save changes and push to Supabase cloud if active
   const saveEntries = async (newEntries: ScheduleEntry[]) => {
     setEntries(newEntries);
+    try {
+      localStorage.setItem('pca_entries', JSON.stringify(newEntries));
+    } catch (e) {
+      console.warn('LocalStorage error:', e);
+    }
 
     if (isSupabaseConfigured()) {
       setSupabaseLoading(true);
@@ -337,6 +370,11 @@ export default function App() {
       ? subjects.map(s => s.code === sub.code ? sub : s)
       : [...subjects, sub];
     setSubjects(updated);
+    try {
+      localStorage.setItem('pca_subjects', JSON.stringify(updated));
+    } catch (e) {
+      console.warn(e);
+    }
 
     if (isSupabaseActive) {
       setSupabaseLoading(true);
@@ -354,6 +392,11 @@ export default function App() {
   const handleDeleteSubject = async (code: string) => {
     const updated = subjects.filter(s => s.code !== code);
     setSubjects(updated);
+    try {
+      localStorage.setItem('pca_subjects', JSON.stringify(updated));
+    } catch (e) {
+      console.warn(e);
+    }
 
     if (isSupabaseActive) {
       setSupabaseLoading(true);
@@ -374,6 +417,11 @@ export default function App() {
       ? teachers.map(t => t.name.toLowerCase() === tch.name.toLowerCase() ? tch : t)
       : [...teachers, tch];
     setTeachers(updated);
+    try {
+      localStorage.setItem('pca_teachers', JSON.stringify(updated));
+    } catch (e) {
+      console.warn(e);
+    }
 
     if (isSupabaseActive) {
       setSupabaseLoading(true);
@@ -391,6 +439,11 @@ export default function App() {
   const handleDeleteTeacher = async (name: string) => {
     const updated = teachers.filter(t => t.name !== name);
     setTeachers(updated);
+    try {
+      localStorage.setItem('pca_teachers', JSON.stringify(updated));
+    } catch (e) {
+      console.warn(e);
+    }
 
     if (isSupabaseActive) {
       setSupabaseLoading(true);
@@ -411,6 +464,11 @@ export default function App() {
       ? classrooms.map(c => c.name.toLowerCase() === rm.name.toLowerCase() ? rm : c)
       : [...classrooms, rm];
     setClassrooms(updated);
+    try {
+      localStorage.setItem('pca_classrooms', JSON.stringify(updated));
+    } catch (e) {
+      console.warn(e);
+    }
 
     if (isSupabaseActive) {
       setSupabaseLoading(true);
@@ -428,6 +486,11 @@ export default function App() {
   const handleDeleteClassroom = async (name: string) => {
     const updated = classrooms.filter(c => c.name !== name);
     setClassrooms(updated);
+    try {
+      localStorage.setItem('pca_classrooms', JSON.stringify(updated));
+    } catch (e) {
+      console.warn(e);
+    }
 
     if (isSupabaseActive) {
       setSupabaseLoading(true);
@@ -1067,6 +1130,7 @@ export default function App() {
               {selectedTab === 'classrooms' && (
                 <ClassroomMatrix
                   entries={entries}
+                  classrooms={classrooms}
                   onSelectEntry={handleOpenEdit}
                 />
               )}
@@ -1420,7 +1484,26 @@ export default function App() {
                                     {sub.code}
                                   </td>
                                   <td className="p-3 font-bold text-slate-800">
-                                    {sub.name}
+                                    <div>{sub.name}</div>
+                                    <div className="flex items-center gap-1.5 mt-1 font-sans">
+                                      <span className="text-[9px] text-slate-450 uppercase font-extrabold tracking-wider shrink-0">Grupos programados:</span>
+                                      {(() => {
+                                        const matchingEntries = entries.filter(e => e.code === sub.code);
+                                        const activeGroups = Array.from(new Set(matchingEntries.map(e => e.group).filter(Boolean)));
+                                        if (activeGroups.length > 0) {
+                                          return (
+                                            <div className="flex flex-wrap gap-1">
+                                              {activeGroups.sort().map(grp => (
+                                                <span key={grp} className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-100 rounded text-[9px] font-mono font-extrabold">
+                                                  {grp}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          );
+                                        }
+                                        return <span className="text-[9px] text-slate-400 italic font-medium">Ninguno activo aún</span>;
+                                      })()}
+                                    </div>
                                   </td>
                                   <td className="p-3">
                                     <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-lg text-[10px] font-bold uppercase">
