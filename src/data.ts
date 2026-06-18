@@ -89,6 +89,16 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
         });
       }
 
+      // Rule: Los sábados la única opción permitida de programación es en la jornada de la mañana (7:00 AM - 1:15 PM)
+      if (entry.day === 'Sábado' && shift !== 'morning') {
+        conflicts.push({
+          type: 'OUT_OF_SHIFT',
+          message: `Jornada de Sábado Incorrecta: Los sábados la única opción permitida de programación es en la jornada de la mañana (7:00 AM - 1:15 PM), pero se encuentra en ${shift === 'afternoon' ? 'Jornada Tarde' : 'Jornada Nocturna'} (${entry.startTime}).`,
+          involvedIds: [entry.id],
+          severity: 'error'
+        });
+      }
+
       // Rule: Los semestres 1er y 2do semestre deben programarse en la mañana.
       // Excepcionalmente se pueden programar pocas clases en la tarde (permitido solo manualmente como advertencia/warning).
       if (entry.semester === 1 || entry.semester === 2) {
@@ -397,6 +407,7 @@ function solveGroup(
     for (const day of dayCandidates) {
       for (const room of roomCandidates) {
         for (const shiftConfig of allowedShifts) {
+          if (day === 'Sábado' && shiftConfig.shift !== 'morning') continue;
           if (numBlocks > shiftConfig.maxBlocks) continue;
           const maxStart = shiftConfig.maxBlocks - numBlocks;
 
@@ -448,6 +459,7 @@ function solveGroup(
       for (const day of dayCandidates) {
         for (const room of fallbackRooms) {
           for (const shiftConfig of allowedShifts) {
+            if (day === 'Sábado' && shiftConfig.shift !== 'morning') continue;
             if (numBlocks > shiftConfig.maxBlocks) continue;
             const maxStart = shiftConfig.maxBlocks - numBlocks;
 

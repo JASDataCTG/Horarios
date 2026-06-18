@@ -202,7 +202,9 @@ export default function ClassModal({
   };
 
   // Pre-configured typical scheduling suggestions
-  const quickHours = ['07:00', '08:00', '10:00', '14:00', '18:00', '20:00'];
+  const quickHours = formData.day === 'Sábado'
+    ? ['07:00', '08:00', '09:00', '10:00', '11:00']
+    : ['07:00', '08:00', '10:00', '14:00', '18:00', '20:00'];
 
   return (
     <AnimatePresence>
