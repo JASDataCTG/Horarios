@@ -21,11 +21,16 @@ import {
   HelpCircle,
   Clock,
   Eye,
-  EyeOff
+  EyeOff,
+  ShieldAlert,
+  Database,
+  Trash2,
+  Copy
 } from 'lucide-react';
 
 import { ScheduleEntry, ShiftType } from './types';
 import { INITIAL_ENTRIES, detectConflicts, DAYS, CLASSROOMS, LOCATIONS, autoResolveConflicts } from './data';
+import { isSupabaseConfigured, getSupabaseEntries, saveAllSupabaseEntries } from './lib/supabaseClient';
 import MetricCard from './components/MetricCard';
 import ClassModal from './components/ClassModal';
 import WeeklyScheduleGrid from './components/WeeklyScheduleGrid';
@@ -36,43 +41,15 @@ import SemesterStatusMatrix from './components/SemesterStatusMatrix';
 
 export default function App() {
   // --- STATE ---
-  const [entries, setEntries] = useState<ScheduleEntry[]>(() => {
-    try {
-      const saved = localStorage.getItem('university_schedule_entries');
-      if (saved !== null) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.warn('Could not read from localstorage synchronously, falling back to default pdf list.', e);
-    }
-    return INITIAL_ENTRIES;
-  });
+  const [entries, setEntries] = useState<ScheduleEntry[]>(INITIAL_ENTRIES);
 
-  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('university_schedule_show_diagnostics');
-      return saved !== 'false';
-    } catch {
-      return true;
-    }
-  });
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(true);
 
   const toggleDiagnostics = () => {
-    setShowDiagnostics(prev => {
-      const next = !prev;
-      try {
-        localStorage.setItem('university_schedule_show_diagnostics', String(next));
-      } catch (e) {
-        console.error(e);
-      }
-      return next;
-    });
+    setShowDiagnostics(prev => !prev);
   };
 
-  const [selectedTab, setSelectedTab] = useState<'grid' | 'list' | 'classrooms' | 'teachers'>('grid');
+  const [selectedTab, setSelectedTab] = useState<'grid' | 'list' | 'classrooms' | 'teachers' | 'crud'>('grid');
   const [selectedShift, setSelectedShift] = useState<ShiftType>('all');
   const [selectedSemester, setSelectedSemester] = useState<string>('all');
   const [selectedLocation, setSelectedLocation] = useState<string>('all');
@@ -89,13 +66,63 @@ export default function App() {
   // File Upload reference
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  // Save changes to localStorage on entries change
-  const saveEntries = (newEntries: ScheduleEntry[]) => {
+  // --- SUPABASE CONNECTIVITY STATES ---
+  const [supabaseLoading, setSupabaseLoading] = useState<boolean>(false);
+  const [isSupabaseActive, setIsSupabaseActive] = useState<boolean>(false);
+  const [supabaseMessage, setSupabaseMessage] = useState<string>('Detectando base de datos...');
+
+  // Sync load from Supabase if configured at startup
+  useEffect(() => {
+    const initDatabase = async () => {
+      const isConfigured = isSupabaseConfigured();
+      setIsSupabaseActive(isConfigured);
+      if (isConfigured) {
+        setSupabaseLoading(true);
+        setSupabaseMessage('Conectando con Supabase...');
+        try {
+          const cloudEntries = await getSupabaseEntries();
+          if (cloudEntries !== null && cloudEntries.length > 0) {
+            setEntries(cloudEntries);
+            setSupabaseMessage('Sincronizado: Base de Datos de Supabase Conectada');
+          } else {
+            // First time load or empty, let's push the existing state to initialize cloud
+            await saveAllSupabaseEntries(INITIAL_ENTRIES);
+            setEntries(INITIAL_ENTRIES);
+            setSupabaseMessage('Conectado: Base de Datos Inicializada con Datos Base');
+          }
+        } catch (err) {
+          console.error(err);
+          setSupabaseMessage('Error de Sincronización con la Base de Datos Nube');
+        } finally {
+          setSupabaseLoading(false);
+        }
+      } else {
+        setSupabaseMessage('Base de Datos Nube no configurada. Usando Datos en Memoria.');
+      }
+    };
+    initDatabase();
+  }, []);
+
+  // Save changes and push to Supabase cloud if active
+  const saveEntries = async (newEntries: ScheduleEntry[]) => {
     setEntries(newEntries);
-    try {
-      localStorage.setItem('university_schedule_entries', JSON.stringify(newEntries));
-    } catch (e) {
-      console.error('Failed to save state to localStorage', e);
+
+    if (isSupabaseConfigured()) {
+      setSupabaseLoading(true);
+      setSupabaseMessage('Sincronizando cambios en Supabase...');
+      try {
+        const success = await saveAllSupabaseEntries(newEntries);
+        if (success) {
+          setSupabaseMessage('✓ Sincronizado en Supabase Cloud');
+        } else {
+          setSupabaseMessage('⚠ Fallo al guardar en Supabase.');
+        }
+      } catch (e) {
+        console.error(e);
+        setSupabaseMessage('⚠ Sin conexión con la Base de Datos Nube.');
+      } finally {
+        setSupabaseLoading(false);
+      }
     }
   };
 
@@ -148,57 +175,20 @@ export default function App() {
     saveEntries(updated);
   };
 
-  // --- BACKUP MECHANISMS ---
-  const handleResetToPDFData = () => {
-    if (confirm('¿Desea restablecer toda la programación al estado original de la planilla del PDF? Se perderán las modificaciones actuales.')) {
-      saveEntries(INITIAL_ENTRIES);
-    }
+  const handleDuplicateEntry = (entry: ScheduleEntry) => {
+    const duplicated: ScheduleEntry = {
+      ...entry,
+      id: `class-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      group: `${entry.group}-COP`,
+    };
+    saveEntries([...entries, duplicated]);
   };
 
+  // --- DATABASE PURGE ---
   const handleClearAllEntries = () => {
     if (confirm('¿Está absolutamente seguro de vaciar toda la base de datos de horarios de clases? Esto borrará permanentemente todos los registros y le permitirá ingresar sus propias clases y configurar la programación desde cero.')) {
       saveEntries([]);
     }
-  };
-
-  const handleExportJSON = () => {
-    try {
-      const jsonStr = JSON.stringify(entries, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute("href", url);
-      downloadAnchor.setAttribute("download", "respaldo_localstorage_horarios.json");
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      alert('Error al exportar la información del localStorage.');
-    }
-  };
-
-  const handleImportJSON = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const result = e.target?.result as string;
-        const parsed = JSON.parse(result);
-        if (Array.isArray(parsed)) {
-          saveEntries(parsed);
-          alert('¡Sincronización Exitosa! Toda la información del localStorage fue restaurada exitosamente.');
-        } else {
-          alert('El archivo no tiene el formato correcto (debe ser un arreglo JSON con la programación).');
-        }
-      } catch (err) {
-        alert('Error al leer el archivo de base de datos local JSON.');
-      }
-    };
-    reader.readAsText(file);
-    event.target.value = ''; // Reset input to allow double uploads of the same file
   };
 
   // --- EXCEL CSV COMPATIBILITY GENERATOR ---
@@ -308,12 +298,51 @@ export default function App() {
                   Programación Académica
                 </h1>
                 <span className="text-[10px] bg-indigo-50 text-indigo-600 font-bold px-2 py-0.5 rounded border border-indigo-100">
-                  Vercel Ready
+                  Vercel & Supabase Ready
                 </span>
               </div>
-              <p className="text-xs text-slate-500 uppercase tracking-widest font-semibold mt-0.5">
+              <p className="text-xs text-slate-505 uppercase tracking-widest font-semibold mt-0.5">
                 Semestre 2026-II • Lunes a Sábado
               </p>
+              
+              {/* Dynamic Database Status Banner */}
+              <div className="flex items-center gap-1.5 mt-1 border border-slate-100 bg-slate-50/50 px-2 py-0.5 rounded-md w-fit">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${
+                  isSupabaseActive 
+                    ? (supabaseLoading ? 'bg-amber-400 animate-pulse' : 'bg-emerald-500 animate-pulse') 
+                    : 'bg-slate-400'
+                }`}></span>
+                <span className="text-[10px] font-medium text-slate-500 flex items-center gap-1">
+                  {supabaseMessage}
+                  {isSupabaseActive && (
+                    <button 
+                      onClick={async () => {
+                        setSupabaseLoading(true);
+                        setSupabaseMessage('Sincronizando manualmente...');
+                        try {
+                          const cloudEntries = await getSupabaseEntries();
+                          if (cloudEntries !== null && cloudEntries.length > 0) {
+                            setEntries(cloudEntries);
+                            localStorage.setItem('university_schedule_entries', JSON.stringify(cloudEntries));
+                            setSupabaseMessage('✓ Sincronizado con Supabase');
+                          } else {
+                            await saveAllSupabaseEntries(entries);
+                            setSupabaseMessage('✓ Repoblado y sincronizado');
+                          }
+                        } catch (e) {
+                          setSupabaseMessage('⚠ Fallo en sincronización');
+                        } finally {
+                          setSupabaseLoading(false);
+                        }
+                      }}
+                      className="ml-1 text-indigo-600 hover:text-indigo-800 hover:underline cursor-pointer text-[10px] font-bold"
+                      title="Forzar actualización manual recargando los datos de la base de datos Supabase"
+                    >
+                      (Actualizar Nube)
+                    </button>
+                  )}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -340,42 +369,7 @@ export default function App() {
               <span>Exportar a Excel (.csv)</span>
             </button>
 
-            {/* Backups buttons */}
-            <button
-              onClick={handleExportJSON}
-              className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-xs font-bold rounded-lg text-indigo-700 transition-all cursor-pointer border border-indigo-200"
-              title="Descargar respaldo completo de la base de datos de horarios (localStorage) en formato JSON"
-            >
-              <Download className="w-4 h-4 text-indigo-600 animate-pulse" />
-              <span>Exportar LocalStorage (JSON)</span>
-            </button>
 
-            <button
-              onClick={() => uploadInputRef.current?.click()}
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg text-slate-700 transition-all cursor-pointer border border-slate-200"
-              title="Cargar y restaurar respaldo completo de horarios en el localStorage de este navegador"
-            >
-              <Upload className="w-4 h-4 text-purple-600" />
-              <span>Importar LocalStorage (JSON)</span>
-            </button>
-
-            <input
-              type="file"
-              ref={uploadInputRef}
-              onChange={handleImportJSON}
-              accept=".json"
-              className="hidden"
-            />
-
-            {/* Reset back to pristine data */}
-            <button
-              onClick={handleResetToPDFData}
-              className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 hover:text-rose-800 text-xs font-semibold text-rose-700 rounded-lg transition-all cursor-pointer border border-rose-200"
-              title="Reestablecer programación de carga original del PDF"
-            >
-              <RotateCcw className="w-4 h-4" />
-              <span>Restablecer PDF</span>
-            </button>
 
             <button
               onClick={() => window.print()}
@@ -497,11 +491,8 @@ export default function App() {
           onSelectClassToEdit={handleOpenEdit}
         />
 
-        {/* 3. Primary Workspace Divide Grid (Left Panels + Right Diagnostic) */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          
-          {/* LEFT COLUMN: Tab controller and active workspace panel (expands to col-12 when diagnostics are hidden) */}
-          <div className={`${showDiagnostics ? 'lg:col-span-8' : 'lg:col-span-12'} transition-all duration-300 space-y-4 flex flex-col h-full`}>
+        {/* 3. Primary Full-Width Workspace Panel */}
+        <div className="space-y-4 flex flex-col w-full">
             
             {/* Panel Tabs Controls - Geometric Balance styled */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-2 flex flex-wrap gap-1.5 no-print">
@@ -533,6 +524,13 @@ export default function App() {
                 <User className="w-4 h-4" />
                 Carga de Docentes
               </button>
+              <button
+                onClick={() => setSelectedTab('crud')}
+                className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-xs font-bold font-sans transition-all cursor-pointer ${selectedTab === 'crud' ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-100' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                <Database className="w-4 h-4" />
+                Gestión CRUD (Nube)
+              </button>
  
                <div className="ml-auto no-print flex items-center gap-2 flex-wrap sm:flex-nowrap">
                  <button
@@ -542,7 +540,7 @@ export default function App() {
                        ? 'bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-700' 
                        : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100 text-emerald-700'
                    }`}
-                   title={showDiagnostics ? 'Ocultar panel lateral de diagnósticos y alertas choques' : 'Mostrar panel lateral de diagnósticos y alertas choques'}
+                   title={showDiagnostics ? 'Ocultar consola de diagnósticos y alertas en la parte inferior' : 'Mostrar consola de diagnósticos y alertas en la parte inferior'}
                  >
                    {showDiagnostics ? (
                      <>
@@ -637,53 +635,29 @@ export default function App() {
               {selectedTab === 'list' && (
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4 font-sans">
                   
-                  {/* Local Database Administration Dashboard Segment */}
-                  <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-                    <div className="md:col-span-7 space-y-1 text-left">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 uppercase tracking-wider font-sans">
-                        <Table className="w-4 h-4 text-indigo-600" />
-                        <span>Consola de Base de Datos de Horarios (Local)</span>
+                  {/* Supabase Cloud Database Administration Panel */}
+                  <div className="bg-emerald-50/40 border border-emerald-200/50 rounded-xl p-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                    <div className="md:col-span-8 space-y-1 text-left">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800 uppercase tracking-wider font-sans">
+                        <Database className="w-4.5 h-4.5 text-emerald-600" />
+                        <span>Sincronización de Base de Datos (Supabase Cloud Active)</span>
                       </div>
-                      <p className="text-[11px] text-slate-500 font-sans leading-relaxed">
-                        Esta aplicación gestiona la programación de manera local directa. Los datos se guardan de forma permanente y segura en la memoria de su navegador (<code className="bg-slate-200 px-1 py-0.5 rounded font-mono text-slate-650">localStorage</code>) para que no dependa de re-cargar el archivo PDF. Las alteraciones persisten al cerrar la sesión.
+                      <p className="text-[11px] text-slate-600 font-sans leading-relaxed">
+                        Esta aplicación utiliza **Supabase** como persistencia oficial. Cada cambio realizado (crear, modificar o eliminar clases) se sincroniza automáticamente en la nube en tiempo real, garantizando la consistencia absoluta de los horarios para todo el equipo.
                       </p>
                       <div className="flex items-center gap-2 text-[10px] text-emerald-700 font-bold font-sans">
                         <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-                        <span>Base de Datos Activa: {entries.length} clases almacenadas en el equipo</span>
+                        <span>Estado: Sincronización en la nube configurada con {entries.length} clases activas</span>
                       </div>
                     </div>
-                    <div className="md:col-span-5 flex flex-wrap gap-1.5 justify-end">
-                      <button
-                        onClick={() => uploadInputRef.current?.click()}
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 hover:text-indigo-800 text-[11px] font-bold text-indigo-700 rounded-lg transition-all cursor-pointer"
-                        title="Importar un archivo de respaldo JSON de horarios"
-                      >
-                        <Upload className="w-3.5 h-3.5 shrink-0" />
-                        <span>Cargar Copia</span>
-                      </button>
-                      <button
-                        onClick={handleExportJSON}
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-sky-50 border border-sky-200 hover:bg-sky-100 hover:text-sky-850 text-[11px] font-bold text-sky-750 rounded-lg transition-all cursor-pointer"
-                        title="Descargar copia de respaldo JSON de la programación"
-                      >
-                        <Download className="w-3.5 h-3.5 shrink-0" />
-                        <span>Exportar JSON</span>
-                      </button>
-                      <button
-                        onClick={handleResetToPDFData}
-                        className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 border border-amber-200 hover:bg-amber-100 hover:text-amber-800 text-[11px] font-bold text-amber-700 rounded-lg transition-all cursor-pointer"
-                        title="Descargar datos originales leídos del PDF"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-                        <span>Volver al PDF</span>
-                      </button>
+                    <div className="md:col-span-4 flex flex-wrap gap-1.5 justify-end">
                       <button
                         onClick={handleClearAllEntries}
                         className="flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 border border-rose-200 hover:bg-rose-100 hover:text-rose-800 text-[11px] font-bold text-rose-700 rounded-lg transition-all cursor-pointer"
-                        title="Eliminar absolutamente todas las asignaturas para editarlas libremente"
+                        title="Eliminar absolutamente todas las asignaturas de la base de datos Supabase"
                       >
                         <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-rose-600" />
-                        <span>Vaciar Todo</span>
+                        <span>Vaciar Base de Datos</span>
                       </button>
                     </div>
                   </div>
@@ -849,49 +823,263 @@ export default function App() {
                 />
               )}
 
+              {/* --- VIEW 5: DATABASE CRUD MANAGEMENT TAB --- */}
+              {selectedTab === 'crud' && (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-6 font-sans">
+                  
+                  {/* Header panel for CRUD controls & stats */}
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-5 bg-gradient-to-r from-emerald-50/60 to-teal-50/40 rounded-2xl border border-emerald-100/80">
+                    <div className="space-y-1 text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="p-2 rounded-xl bg-emerald-500 text-white shadow-xs">
+                          <Database className="w-5 h-5" />
+                        </span>
+                        <div>
+                          <h3 className="font-bold text-sm text-slate-800 uppercase tracking-wide">
+                            Consola de Operaciones CRUD
+                          </h3>
+                          <p className="text-xs text-slate-500 font-sans mt-0.5">
+                            Cree, edite, duplique y elimine asignaturas en tiempo real con sincronización directa en Supabase Cloud.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex sm:items-center gap-2 flex-wrap sm:flex-nowrap justify-end">
+                      <button
+                        onClick={handleOpenCreate}
+                        className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer transition-all hover:scale-[1.02]"
+                      >
+                        <Plus className="w-4 h-4 shrink-0" />
+                        <span>Añadir Nueva Asignatura</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Search and filter controls inside CRUD workspace */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center pt-2">
+                    <div className="md:col-span-4 relative">
+                      <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Buscar materia, docente o día..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-9 pr-3 py-2 border border-slate-200 rounded-xl outline-none text-xs w-full focus:bg-slate-50/50 focus:border-emerald-500 font-sans transition-colors"
+                      />
+                    </div>
+
+                    <div className="md:col-span-8 flex flex-wrap gap-2 justify-start md:justify-end">
+                      {/* Semester Filter */}
+                      <select
+                        value={selectedSemester}
+                        onChange={(e) => setSelectedSemester(e.target.value)}
+                        className="px-3 py-2 border border-slate-200 rounded-xl outline-none text-xs text-slate-600 bg-white font-sans font-semibold cursor-pointer focus:border-emerald-500"
+                      >
+                        <option value="all">S: Todos los Semestres</option>
+                        {[1,2,3,4,5,6,7,8,9].map(num => (
+                          <option key={num} value={num}>Semestre {num}</option>
+                        ))}
+                      </select>
+
+                      {/* Location Filter */}
+                      <select
+                        value={selectedLocation}
+                        onChange={(e) => setSelectedLocation(e.target.value)}
+                        className="px-3 py-2 border border-slate-200 rounded-xl outline-none text-xs text-slate-600 bg-white font-sans font-semibold cursor-pointer focus:border-emerald-500"
+                      >
+                        <option value="all">Sede: Todas</option>
+                        {LOCATIONS.map(loc => (
+                          <option key={loc} value={loc}>Sede: {loc}</option>
+                        ))}
+                      </select>
+
+                      {/* Clear filters if active */}
+                      {(searchTerm !== '' || selectedSemester !== 'all' || selectedLocation !== 'all') && (
+                        <button
+                          onClick={() => {
+                            setSearchTerm('');
+                            setSelectedSemester('all');
+                            setSelectedLocation('all');
+                          }}
+                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                        >
+                          Limpiar Filtros
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Main CRUD Table Container */}
+                  <div className="overflow-x-auto border border-slate-200/80 rounded-2xl shadow-xs">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/80 text-slate-500 font-bold text-[10px] uppercase tracking-wider border-b border-slate-200">
+                          <th className="p-3 pl-4">Sem.</th>
+                          <th className="p-3">Materia & Código</th>
+                          <th className="p-3">Grupo</th>
+                          <th className="p-3">Horario</th>
+                          <th className="p-3">Sede & Aula</th>
+                          <th className="p-3">Docente</th>
+                          <th className="p-3 text-center">Intensidad</th>
+                          <th className="p-3 text-right pr-6">Acciones CRUD</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-xs text-left">
+                        {tableFilteredEntries.map(entry => {
+                          const hasConflicts = conflicts.some(c => c.involvedIds.includes(entry.id));
+                          return (
+                            <tr
+                              key={entry.id}
+                              className={`hover:bg-slate-50/50 transition-colors ${hasConflicts ? 'bg-rose-50/20' : ''}`}
+                            >
+                              <td className="p-3 pl-4 font-bold text-slate-400 font-mono">
+                                S{entry.semester}
+                              </td>
+                              <td className="p-3">
+                                <div className="font-bold text-slate-800">{entry.subject}</div>
+                                <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                  Cód: {entry.code || 'N/A'} • {entry.activity}
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-lg font-bold font-mono">
+                                  {entry.group}
+                                </span>
+                              </td>
+                              <td className="p-3">
+                                <div className="font-bold text-slate-700">{entry.day}</div>
+                                <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                  {entry.startTime} ({entry.durationHours} hrs)
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <div className="font-bold text-slate-700">{entry.room || 'Por asignar'}</div>
+                                <div className="text-[10px] text-slate-400 font-semibold mt-0.5 uppercase tracking-wide">
+                                  Sede: {entry.location}
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <span className="font-medium text-slate-600">{entry.teacher}</span>
+                              </td>
+                              <td className="p-3 text-center whitespace-nowrap font-mono">
+                                <div className="text-slate-700 font-bold">{entry.intensity}h</div>
+                              </td>
+                              <td className="p-3 text-right pr-6 whitespace-nowrap">
+                                <div className="inline-flex items-center gap-1.5 justify-end">
+                                  
+                                  {/* Duplicate */}
+                                  <button
+                                    onClick={() => handleDuplicateEntry(entry)}
+                                    className="p-1.5 rounded-lg border border-emerald-100 hover:border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50 text-emerald-600 hover:text-emerald-700 transition-colors cursor-pointer"
+                                    title="Duplicar materia / Crear grupo alternativo"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {/* Edit */}
+                                  <button
+                                    onClick={() => handleOpenEdit(entry)}
+                                    className="p-1.5 rounded-lg border border-slate-205 hover:border-indigo-500 hover:bg-indigo-50/40 text-slate-500 hover:text-indigo-700 transition-colors cursor-pointer"
+                                    title="Editar materia"
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  {/* Delete */}
+                                  <button
+                                    onClick={() => {
+                                      if (confirm(`¿Está seguro de eliminar permanentemente la materia "${entry.subject}" (${entry.group}) del profesor ${entry.teacher}?`)) {
+                                        handleDeleteEntry(entry.id);
+                                      }
+                                    }}
+                                    className="p-1.5 rounded-lg border border-rose-100 hover:border-rose-300 bg-rose-50/40 hover:bg-rose-100 text-rose-600 hover:text-rose-705 transition-colors cursor-pointer"
+                                    title="Eliminar materia de la base de datos"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {tableFilteredEntries.length === 0 && (
+                          <tr>
+                            <td colSpan={8} className="p-12 text-center text-slate-400 italic font-sans bg-slate-50/10">
+                              No se encontraron asignaciones que coincidan con los filtros. Use el botón "Añadir Nueva Asignatura" para registrar una.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Summary counts */}
+                  <div className="flex items-center justify-between text-xs text-slate-505 pt-1 font-mono">
+                    <span>Panel de Control de Horarios</span>
+                    <span className="font-bold text-slate-600">Total: {tableFilteredEntries.length} asignaturas filtradas</span>
+                  </div>
+                </div>
+              )}
+
             </div>
-          </div>
 
-          {/* RIGHT 4-COLS: Real-time conflicts and diagnostic alerts console (only visible if showDiagnostics is true) */}
-          {showDiagnostics && (
-            <div className="lg:col-span-4 sticky top-6 space-y-4 no-print animate-fadeIn">
-              <ConflictAlerts
-                conflicts={conflicts}
-                entries={entries}
-                onSelectClassToEdit={handleOpenEdit}
-              />
+        </div>
 
-              {/* Quick schedule checklist reference panel in Geometric Balance Theme */}
-              <div className="bg-white rounded-xl shadow-sm border border-slate-205 p-5 text-left text-xs space-y-3">
-                <h4 className="font-bold font-sans text-slate-800 flex items-center gap-1.5">
-                  <BookmarkCheck className="w-4 h-4 text-indigo-650" />
-                  Guía de Jornadas Oficiales:
-                </h4>
-                <p className="text-slate-500 font-sans leading-relaxed">
-                  El algoritmo de detección valida automáticamente que los horarios estén asignados de lunes a sábado dentro de estos límites:
-                </p>
-                <ul className="space-y-2 font-sans text-slate-600">
-                  <li className="flex items-center justify-between p-1.5 bg-sky-50/50 rounded-lg">
-                    <span className="font-bold text-sky-800">1. Jornada Mañana:</span>
-                    <span className="font-mono text-[11px] font-semibold">7:00 AM - 1:15 PM</span>
-                  </li>
-                  <li className="flex items-center justify-between p-1.5 bg-amber-50/50 rounded-lg">
-                    <span className="font-bold text-amber-800">2. Jornada Tarde:</span>
-                    <span className="font-mono text-[11px] font-semibold">2:00 PM - 5:00 PM</span>
-                  </li>
-                  <li className="flex items-center justify-between p-1.5 bg-indigo-50/55 rounded-lg border-indigo-100">
-                    <span className="font-bold text-indigo-805">3. Jornada Nocturna:</span>
-                    <span className="font-mono text-[11px] font-semibold">6:00 PM - 9:45 PM</span>
-                  </li>
-                </ul>
-                <div className="p-3.5 bg-slate-50 rounded-lg text-[11px] text-slate-500 border border-slate-150 leading-snug">
-                  <strong>Nota Sincronizada:</strong> Los cursos importados originalmente de la tabla PDF que inician a las <code className="bg-slate-200 px-1 rounded font-mono text-slate-700">06:00 AM</code> generarán advertencias, invitándole a resolverlas moviéndolas a bloques que comiencen a las <code className="bg-indigo-100/50 px-1 text-indigo-800 rounded font-mono font-bold">07:00 AM</code>.
+        {/* Section: Diagnóstico & Consistencia Académica (Integrated bottom workspace) */}
+        {showDiagnostics && (
+          <div className="mt-8 pt-8 border-t border-slate-200/80 space-y-6 no-print animate-fadeIn">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-50 border border-indigo-150 rounded-xl text-indigo-650">
+                <ShieldAlert className="w-5 h-5 animate-pulse" />
+              </div>
+              <div className="text-left">
+                <h3 className="text-base font-bold text-slate-800 font-sans">Panel de Diagnóstico & Consistencia Integrado</h3>
+                <p className="text-xs text-slate-500 font-sans">Análisis automático de solapamientos, cruces de aulas, carga curricular docente y consistencia de jornadas para el periodo 2026-II</p>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              <div className="lg:col-span-8">
+                <ConflictAlerts
+                  conflicts={conflicts}
+                  entries={entries}
+                  onSelectClassToEdit={handleOpenEdit}
+                />
+              </div>
+              
+              <div className="lg:col-span-4">
+                {/* Quick schedule checklist reference panel in Geometric Balance Theme */}
+                <div className="bg-white rounded-xl shadow-sm border border-slate-205 p-5 text-left text-xs space-y-3">
+                  <h4 className="font-bold font-sans text-slate-800 flex items-center gap-1.5">
+                    <BookmarkCheck className="w-4 h-4 text-indigo-650" />
+                    Guía de Jornadas Oficiales:
+                  </h4>
+                  <p className="text-slate-500 font-sans leading-relaxed">
+                    El algoritmo de detección valida automáticamente que los horarios estén asignados de lunes a sábado dentro de estos límites:
+                  </p>
+                  <ul className="space-y-2 font-sans text-slate-600">
+                    <li className="flex items-center justify-between p-1.5 bg-sky-50/50 rounded-lg">
+                      <span className="font-bold text-sky-800">1. Jornada Mañana:</span>
+                      <span className="font-mono text-[11px] font-semibold">7:00 AM - 1:15 PM</span>
+                    </li>
+                    <li className="flex items-center justify-between p-1.5 bg-amber-50/50 rounded-lg">
+                      <span className="font-bold text-amber-800">2. Jornada Tarde:</span>
+                      <span className="font-mono text-[11px] font-semibold">2:00 PM - 5:00 PM</span>
+                    </li>
+                    <li className="flex items-center justify-between p-1.5 bg-indigo-50/55 rounded-lg border-indigo-100">
+                      <span className="font-bold text-indigo-805">3. Jornada Nocturna:</span>
+                      <span className="font-mono text-[11px] font-semibold">6:00 PM - 9:45 PM</span>
+                    </li>
+                  </ul>
+                  <div className="p-3.5 bg-slate-50 rounded-lg text-[11px] text-slate-500 border border-slate-150 leading-snug">
+                    <strong>Nota Sincronizada:</strong> Los cursos importados originalmente de la tabla PDF que inician a las <code className="bg-slate-200 px-1 rounded font-mono text-slate-700">06:00 AM</code> generarán advertencias, invitándole a resolverlas moviéndolas a bloques que comiencen a las <code className="bg-indigo-100/50 px-1 text-indigo-800 rounded font-mono font-bold">07:00 AM</code>.
+                  </div>
                 </div>
               </div>
             </div>
-          )}
-
-        </div>
+          </div>
+        )}
 
       </main>
 
