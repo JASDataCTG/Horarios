@@ -134,10 +134,10 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
             involvedIds: [entry.id],
             severity: 'warning'
           });
-        } else if (shift === 'morning') {
+        } else if (shift === 'morning' && entry.day !== 'Sábado') {
           conflicts.push({
             type: 'OUT_OF_SHIFT',
-            message: `Jornada Incorrecta: El semestre ${entry.semester} (6to a 9no) NO puede programarse en la jornada de la mañana (${entry.startTime}).`,
+            message: `Jornada Incorrecta: El semestre ${entry.semester} (6to a 9no) NO puede programarse en la jornada de la mañana en días de semana (${entry.startTime}). Los sábados sí se permite la mañana.`,
             involvedIds: [entry.id],
             severity: 'error'
           });
@@ -256,7 +256,9 @@ export function autoResolveConflicts(entries: ScheduleEntry[], targetSemester?: 
       ], frozenEntries);
     } else if (isHigh) {
       solved = solveGroup(targetEntries, [
-        { shift: 'evening', maxBlocks: 5, baseHour: 18 }
+        { shift: 'evening', maxBlocks: 5, baseHour: 18 },
+        { shift: 'afternoon', maxBlocks: 4, baseHour: 14 },
+        { shift: 'morning', maxBlocks: 8, baseHour: 7 }
       ], frozenEntries);
     } else {
       solved = solveGroup(targetEntries, [
@@ -286,7 +288,9 @@ export function autoResolveConflicts(entries: ScheduleEntry[], targetSemester?: 
   ]);
 
   const highSolved = solveGroup(highSemesters, [
-    { shift: 'evening', maxBlocks: 5, baseHour: 18 }
+    { shift: 'evening', maxBlocks: 5, baseHour: 18 },
+    { shift: 'afternoon', maxBlocks: 4, baseHour: 14 },
+    { shift: 'morning', maxBlocks: 8, baseHour: 7 }
   ]);
 
   return [...lowSolved, ...highSolved, ...otherSemesters];
@@ -467,11 +471,30 @@ function solveGroup(
         for (const shiftConfig of allowedShifts) {
           if (day === 'Sábado' && shiftConfig.shift !== 'morning') continue;
           if (numBlocks > shiftConfig.maxBlocks) continue;
+
+          // Restricción para semestres de 6to a 9no: la jornada mañana SOLO se permite los sábados.
+          if (entry.semester >= 6 && entry.semester <= 9) {
+            if (shiftConfig.shift === 'morning' && day !== 'Sábado') {
+              continue;
+            }
+          }
+
           const maxStart = shiftConfig.maxBlocks - numBlocks;
 
           for (let startBlock = 0; startBlock <= maxStart; startBlock++) {
             if (isSpanFree(entry, day, shiftConfig.shift, startBlock, numBlocks, room)) {
-              const penalty = getClosenessPenalty(entry, day, shiftConfig.shift, startBlock, numBlocks);
+              let penalty = getClosenessPenalty(entry, day, shiftConfig.shift, startBlock, numBlocks);
+              
+              // Eventualmente permite mover la noche a la tarde, aplicando un recargo de costo/penalidad para priorizar la noche primero.
+              if (entry.semester >= 6 && entry.semester <= 9 && shiftConfig.shift === 'afternoon') {
+                penalty += 200.0;
+              }
+
+              // Eventualmente permite programar los sábados por la mañana para semestres 6 a 9 si es necesario, con un recargo de costo para priorizar la noche primero.
+              if (entry.semester >= 6 && entry.semester <= 9 && shiftConfig.shift === 'morning' && day === 'Sábado') {
+                penalty += 150.0;
+              }
+
               options.push({
                 day,
                 room,
@@ -519,11 +542,30 @@ function solveGroup(
           for (const shiftConfig of allowedShifts) {
             if (day === 'Sábado' && shiftConfig.shift !== 'morning') continue;
             if (numBlocks > shiftConfig.maxBlocks) continue;
+
+            // Restricción para semestres de 6to a 9no en el fallback
+            if (entry.semester >= 6 && entry.semester <= 9) {
+              if (shiftConfig.shift === 'morning' && day !== 'Sábado') {
+                continue;
+              }
+            }
+
             const maxStart = shiftConfig.maxBlocks - numBlocks;
 
             for (let startBlock = 0; startBlock <= maxStart; startBlock++) {
               if (isSpanFree(entry, day, shiftConfig.shift, startBlock, numBlocks, room)) {
-                const penalty = getClosenessPenalty(entry, day, shiftConfig.shift, startBlock, numBlocks);
+                let penalty = getClosenessPenalty(entry, day, shiftConfig.shift, startBlock, numBlocks);
+                
+                // Penalty for high semesters in afternoon fallback
+                if (entry.semester >= 6 && entry.semester <= 9 && shiftConfig.shift === 'afternoon') {
+                  penalty += 200.0;
+                }
+
+                // Penalty for Saturday morning fallback
+                if (entry.semester >= 6 && entry.semester <= 9 && shiftConfig.shift === 'morning' && day === 'Sábado') {
+                  penalty += 150.0;
+                }
+
                 fallbackOptions.push({
                   day,
                   room,
@@ -552,13 +594,40 @@ function solveGroup(
         entry.startTime = startTimeStr;
       } else {
         const currentShift = getShiftForTime(entry.startTime);
-        if (currentShift !== 'none') {
-          const shiftConf = shifts.find(s => s.shift === currentShift);
-          if (shiftConf) {
-            const startMins = timeToMinutes(entry.startTime);
-            const baseMins = shiftConf.baseHour * 60;
-            const startBlk = Math.max(0, Math.floor((startMins - baseMins) / 45));
-            setSpanOccupancy(entry, entry.day, currentShift, startBlk, numBlocks, originalRoomVal, true);
+        // SI SE ENCUENTRA EN SÁBADO POR LA TARDE/NOCHE, ¡FORZAR A UN DÍA DE SEMANA!
+        if (entry.day === 'Sábado' && currentShift !== 'morning') {
+          let forced = false;
+          for (const day of DAYS.filter(d => d !== 'Sábado')) {
+            for (const shiftConfig of allowedShifts) {
+              if (numBlocks <= shiftConfig.maxBlocks) {
+                entry.day = day;
+                entry.room = 'Por asignar';
+                const startOff = shiftConfig.baseHour * 60;
+                entry.startTime = `${String(Math.floor(startOff / 60)).padStart(2, '0')}:${String(startOff % 60).padStart(2, '0')}`;
+                setSpanOccupancy(entry, day, shiftConfig.shift, 0, numBlocks, 'Por asignar', true);
+                forced = true;
+                break;
+              }
+            }
+            if (forced) break;
+          }
+          if (!forced) {
+            // Último recurso absoluto: Lunes a las 18:00
+            entry.day = 'Lunes';
+            entry.startTime = '18:00';
+            entry.room = 'Por asignar';
+            setSpanOccupancy(entry, 'Lunes', 'evening', 0, numBlocks, 'Por asignar', true);
+          }
+        } else {
+          // Mantener la posición actual
+          if (currentShift !== 'none') {
+            const shiftConf = shifts.find(s => s.shift === currentShift);
+            if (shiftConf) {
+              const startMins = timeToMinutes(entry.startTime);
+              const baseMins = shiftConf.baseHour * 60;
+              const startBlk = Math.max(0, Math.floor((startMins - baseMins) / 45));
+              setSpanOccupancy(entry, entry.day, currentShift, startBlk, numBlocks, originalRoomVal, true);
+            }
           }
         }
       }

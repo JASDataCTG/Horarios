@@ -174,6 +174,34 @@ export default function ConflictAlerts({
           </div>
         </div>
       )}
+
+      {/* Dynamic Academic advice on Shifts (Recomendaciones de Jornada de acuerdo a restricciones) */}
+      <div className="mt-4 pt-3.5 border-t border-slate-100 text-left bg-gradient-to-br from-indigo-50/30 via-amber-50/20 to-emerald-50/20 p-3.5 rounded-xl border border-slate-100">
+        <h4 className="text-[12px] font-bold text-indigo-900 flex items-center gap-1.5 mb-2 font-sans">
+          <HelpCircle className="w-4 h-4 text-indigo-600 shrink-0" />
+          <span>Sugerencias de Distribución de Jornadas Estudiantiles</span>
+        </h4>
+        <ul className="space-y-2.5 text-[11px] leading-relaxed text-slate-600 font-sans">
+          <li className="flex items-start gap-1.5">
+            <span className="text-indigo-600 font-bold text-[13px] leading-none shrink-0">•</span>
+            <span>
+              <strong>🌙 Descongestión Nocturna y Tarde:</strong> Si se presentan demasiados cruces de docentes avanzados, es aconsejable mover asignaturas selectivas a la <strong>Jornada de la Tarde (2:00 PM - 5:00 PM)</strong>. El sistema lo admite oficialmente para semestres de 6° a 9° como una advertencia manejable sin conflicto crítico.
+            </span>
+          </li>
+          <li className="flex items-start gap-1.5">
+            <span className="text-teal-600 font-bold text-[13px] leading-none shrink-0">•</span>
+            <span>
+              <strong>🌅 Balance de Mañana y Tarde (Semestres 3° a 5°):</strong> Recomiende desplazar las materias teóricas de estos semestres intermedios hacia la <strong>tarde</strong>. Esto libera la jornada de la <strong>mañana</strong> garantizando exclusividad y espacio de laboratorios físicos para los primeros semestres (1° y 2°).
+            </span>
+          </li>
+          <li className="flex items-start gap-1.5">
+            <span className="text-amber-600 font-bold text-[13px] leading-none shrink-0">•</span>
+            <span>
+              <strong>📅 Sábados Estratégicos (Semestres 5° a 9°):</strong> Los sábados admiten únicamente la jornada de la <strong>Mañana (7:00 AM - 1:15 PM)</strong>. El optimizador ahora programa de manera prioritaria y permite acomodar las materias del <strong>5to al 9no semestre</strong> los sábados por la mañana, reubicando automáticamente cualquier asignatura que antes quedara indebidamente en sábado de tarde o noche.
+            </span>
+          </li>
+        </ul>
+      </div>
     </div>
   );
 }
