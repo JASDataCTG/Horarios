@@ -15,6 +15,7 @@ import {
   Search,
   AlertTriangle,
   FileDown,
+  FileUp,
   Sparkles,
   BookmarkCheck,
   CheckCircle,
@@ -227,9 +228,19 @@ export default function App() {
 
           if (cloudSubjects && cloudSubjects.length > 0) {
             setSubjects(cloudSubjects);
+            try {
+              localStorage.setItem('pca_subjects', JSON.stringify(cloudSubjects));
+            } catch (e) {
+              console.warn(e);
+            }
           } else {
             const defaults = getInitialSubjects();
             setSubjects(defaults);
+            try {
+              localStorage.setItem('pca_subjects', JSON.stringify(defaults));
+            } catch (e) {
+              console.warn(e);
+            }
             for (const sub of defaults) {
               await saveSupabaseSubject(sub);
             }
@@ -237,9 +248,19 @@ export default function App() {
 
           if (cloudClassrooms && cloudClassrooms.length > 0) {
             setClassrooms(cloudClassrooms);
+            try {
+              localStorage.setItem('pca_classrooms', JSON.stringify(cloudClassrooms));
+            } catch (e) {
+              console.warn(e);
+            }
           } else {
             const defaults = getInitialClassrooms();
             setClassrooms(defaults);
+            try {
+              localStorage.setItem('pca_classrooms', JSON.stringify(defaults));
+            } catch (e) {
+              console.warn(e);
+            }
             for (const cl of defaults) {
               await saveSupabaseClassroom(cl);
             }
@@ -247,9 +268,19 @@ export default function App() {
 
           if (cloudTeachers && cloudTeachers.length > 0) {
             setTeachers(cloudTeachers);
+            try {
+              localStorage.setItem('pca_teachers', JSON.stringify(cloudTeachers));
+            } catch (e) {
+              console.warn(e);
+            }
           } else {
             const defaults = getInitialTeachers();
             setTeachers(defaults);
+            try {
+              localStorage.setItem('pca_teachers', JSON.stringify(defaults));
+            } catch (e) {
+              console.warn(e);
+            }
             for (const tc of defaults) {
               await saveSupabaseTeacher(tc);
             }
@@ -257,12 +288,43 @@ export default function App() {
 
           if (cloudEntries !== null && cloudEntries.length > 0) {
             setEntries(cloudEntries);
+            try {
+              localStorage.setItem('pca_entries', JSON.stringify(cloudEntries));
+            } catch (e) {
+              console.warn(e);
+            }
             setSupabaseMessage('✓ Sincronizado: Base de Datos Relacional de Supabase Conectada');
           } else {
-            // First time load or empty, let's push the existing state to initialize cloud
-            await saveAllSupabaseEntries(INITIAL_ENTRIES);
-            setEntries(INITIAL_ENTRIES);
-            setSupabaseMessage('Conectado: Base de Datos Inicializada con Datos Base');
+            // First time load or empty in cloud: Check if user already had custom entries in localStorage
+            let storedEntries: ScheduleEntry[] | null = null;
+            try {
+              const str = localStorage.getItem('pca_entries');
+              if (str) {
+                const parsed = JSON.parse(str);
+                if (parsed && parsed.length > 0) {
+                  storedEntries = parsed;
+                }
+              }
+            } catch (e) {
+              console.warn(e);
+            }
+
+            if (storedEntries && storedEntries.length > 0) {
+              // Migrate local user entries to cloud database! Keep user adjustments intact.
+              await saveAllSupabaseEntries(storedEntries);
+              setEntries(storedEntries);
+              setSupabaseMessage('✓ Sincronizado: Base de Datos Inicializada con tus Datos Locales');
+            } else {
+              // No local data either, initialize with default entries
+              await saveAllSupabaseEntries(INITIAL_ENTRIES);
+              setEntries(INITIAL_ENTRIES);
+              try {
+                localStorage.setItem('pca_entries', JSON.stringify(INITIAL_ENTRIES));
+              } catch (e) {
+                console.warn(e);
+              }
+              setSupabaseMessage('Conectado: Base de Datos Inicializada con Datos Base');
+            }
           }
         } catch (err) {
           console.error(err);
@@ -302,6 +364,184 @@ export default function App() {
       } finally {
         setSupabaseLoading(false);
       }
+    }
+  };
+
+  const handleForceDownloadFromCloud = async () => {
+    if (!isSupabaseConfigured()) {
+      alert("La Base de Datos Nube (Supabase) no está configurada por variables de entorno.");
+      return;
+    }
+    const confirmDownload = window.confirm("¿Está seguro que desea descargar todos los datos de la Nube? Esto sobreescribirá por completo todo el contenido en su pantalla y en el almacenamiento local del navegador.");
+    if (!confirmDownload) return;
+
+    setSupabaseLoading(true);
+    setSupabaseMessage('Descargando datos desde la nube...');
+    try {
+      const [cloudEntries, cloudSubjects, cloudClassrooms, cloudTeachers] = await Promise.all([
+        getSupabaseEntries(),
+        getSupabaseSubjects(),
+        getSupabaseClassrooms(),
+        getSupabaseTeachers()
+      ]);
+
+      if (cloudEntries !== null) {
+        setEntries(cloudEntries);
+        localStorage.setItem('pca_entries', JSON.stringify(cloudEntries));
+      }
+      if (cloudSubjects !== null) {
+        setSubjects(cloudSubjects);
+        localStorage.setItem('pca_subjects', JSON.stringify(cloudSubjects));
+      }
+      if (cloudClassrooms !== null) {
+        setClassrooms(cloudClassrooms);
+        localStorage.setItem('pca_classrooms', JSON.stringify(cloudClassrooms));
+      }
+      if (cloudTeachers !== null) {
+        setTeachers(cloudTeachers);
+        localStorage.setItem('pca_teachers', JSON.stringify(cloudTeachers));
+      }
+      setSupabaseMessage('✓ Descarga Exitosa. Datos en Sincronía.');
+      alert('¡Descarga Exitosa! Se recuperaron todos los datos de Supabase y el navegador se actualizó.');
+    } catch (err) {
+      console.error(err);
+      setSupabaseMessage('⚠ Fallo en descarga');
+      alert('Error de red: No se pudieron descargar los datos de la Base de Datos Nube.');
+    } finally {
+      setSupabaseLoading(false);
+    }
+  };
+
+  const handleForceUploadToCloud = async () => {
+    if (!isSupabaseConfigured()) {
+      alert("La Base de Datos Nube (Supabase) no está configurada.");
+      return;
+    }
+    const confirmUpload = window.confirm("¿Está seguro que desea subir su versión actual de pantalla a la Nube? Esto reemplazará TODA la base de datos de Supabase con lo que usted tiene en pantalla.");
+    if (!confirmUpload) return;
+
+    setSupabaseLoading(true);
+    setSupabaseMessage('Subiendo datos locales a la nube...');
+    try {
+      const success = await saveAllSupabaseEntries(entries);
+      if (success) {
+        setSupabaseMessage('✓ Subida Exitosa. Sincronizado.');
+        alert('¡Subida Exitosa! Los horarios en pantalla han sido guardados de manera persistente en la Base de Datos Nube.');
+      } else {
+        setSupabaseMessage('⚠ Fallo al guardar en Supabase.');
+        alert('Error: No se pudo registrar la información local en la base de datos remota.');
+      }
+    } catch (err) {
+      console.error(err);
+      setSupabaseMessage('⚠ Error de red al subir');
+      alert('Error de red: No se pudo establecer conexión con Supabase.');
+    } finally {
+      setSupabaseLoading(false);
+    }
+  };
+
+  const handleMergeWithCloud = async () => {
+    if (!isSupabaseConfigured()) {
+      alert("Supabase no está configurado.");
+      return;
+    }
+    setSupabaseLoading(true);
+    setSupabaseMessage('Iniciando fusión inteligente...');
+    try {
+      const [cloudEntries, cloudSubjects, cloudClassrooms, cloudTeachers] = await Promise.all([
+        getSupabaseEntries(),
+        getSupabaseSubjects(),
+        getSupabaseClassrooms(),
+        getSupabaseTeachers()
+      ]);
+
+      // 1. Merge entries by ID
+      const mergedEntriesMap = new Map<string, ScheduleEntry>();
+      if (cloudEntries) {
+        cloudEntries.forEach(e => mergedEntriesMap.set(e.id, e));
+      }
+      entries.forEach(e => {
+        mergedEntriesMap.set(e.id, e);
+      });
+      const mergedEntries = Array.from(mergedEntriesMap.values());
+
+      // 2. Merge subjects by code
+      const mergedSubjectsMap = new Map<string, DBSubject>();
+      if (cloudSubjects) {
+        cloudSubjects.forEach(s => mergedSubjectsMap.set(s.code, s));
+      }
+      subjects.forEach(s => mergedSubjectsMap.set(s.code, s));
+      const mergedSubjects = Array.from(mergedSubjectsMap.values());
+
+      // 3. Merge classrooms by name
+      const mergedClassroomsMap = new Map<string, DBClassroom>();
+      if (cloudClassrooms) {
+        cloudClassrooms.forEach(c => {
+          if (c.name) mergedClassroomsMap.set(c.name, c);
+        });
+      }
+      classrooms.forEach(c => {
+        if (c.name) mergedClassroomsMap.set(c.name, c);
+      });
+      const mergedClassrooms = Array.from(mergedClassroomsMap.values());
+
+      // 4. Merge teachers by name
+      const mergedTeachersMap = new Map<string, DBTeacher>();
+      if (cloudTeachers) {
+        cloudTeachers.forEach(t => {
+          if (t.name) mergedTeachersMap.set(t.name, t);
+        });
+      }
+      teachers.forEach(t => {
+        if (t.name) mergedTeachersMap.set(t.name, t);
+      });
+      const mergedTeachers = Array.from(mergedTeachersMap.values());
+
+      // Update local states
+      setEntries(mergedEntries);
+      setSubjects(mergedSubjects);
+      setClassrooms(mergedClassrooms);
+      setTeachers(mergedTeachers);
+
+      // Save to localStorage
+      try {
+        localStorage.setItem('pca_entries', JSON.stringify(mergedEntries));
+        localStorage.setItem('pca_subjects', JSON.stringify(mergedSubjects));
+        localStorage.setItem('pca_classrooms', JSON.stringify(mergedClassrooms));
+        localStorage.setItem('pca_teachers', JSON.stringify(mergedTeachers));
+      } catch (e) {
+        console.warn(e);
+      }
+
+      // Save merged state to cloud
+      await saveAllSupabaseEntries(mergedEntries);
+
+      setSupabaseMessage('✓ Datos Fusionados y Sincronizados');
+      alert('¡Fusión Completada con Éxito! Se combinaron todos los registros locales y remotos para evitar cualquier pérdida de planificación.');
+    } catch (err) {
+      console.error(err);
+      setSupabaseMessage('⚠ Fallo en fusión');
+      alert('Error de sincronización durante la fusión de datos.');
+    } finally {
+      setSupabaseLoading(false);
+    }
+  };
+
+  const handleClearLocalStorage = () => {
+    const confirmClear = window.confirm("¿Está seguro de querer borrar la caché local de este navegador? Esto borrará solo la memoria temporal de esta computadora y forzará la recarga limpia de lo que está guardado en Supabase. No perderá los datos que ya estén ingresados en la nube.");
+    if (!confirmClear) return;
+
+    try {
+      localStorage.removeItem('pca_entries');
+      localStorage.removeItem('pca_subjects');
+      localStorage.removeItem('pca_classrooms');
+      localStorage.removeItem('pca_teachers');
+      
+      setSupabaseMessage('✓ Caché Local Purga. Reiniciando...');
+      alert('La memoria temporal ha sido purgada. La aplicación se recargará para descargar la versión original de la nube.');
+      window.location.reload();
+    } catch (e) {
+      console.error(e);
     }
   };
 
@@ -514,39 +754,332 @@ export default function App() {
 
   // --- EXCEL CSV COMPATIBILITY GENERATOR ---
   const handleExportToCSV = () => {
-    // Columns for CSV
-    const headers = ['Semestre', 'Codigo', 'Asignatura', 'Actividad', 'Grupo', 'Dia', 'HoraInicio', 'DuracionHoras', 'Sede', 'Aula', 'Docente', 'Dependencia', 'HorasTeoria', 'HorasPractica', 'Proyeccion'];
+    // Helper to calculate end time
+    const getEndTimeString = (startTimeStr: string, durationHrs: number): string => {
+      if (!startTimeStr) return '';
+      const [hStr, mStr] = startTimeStr.split(':');
+      const h = parseInt(hStr, 10);
+      const m = parseInt(mStr, 10);
+      if (isNaN(h) || isNaN(m)) return '';
+      const totalMins = h * 60 + m + Math.round(durationHrs * 60);
+      const endH = Math.floor(totalMins / 60) % 24;
+      const endM = totalMins % 60;
+      return `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
+    };
+
+    // Exact column headers requested by user
+    const headers = [
+      'AsignaciónFija',
+      'Semestre',
+      'Codigo (#####-G##)',
+      'Asignatura',
+      'Intensidad horaria',
+      'Actividad',
+      'DiaPropuesto',
+      'Grupo',
+      'HoraInicio Propuesta',
+      'Sede',
+      'Requerimiento Aula',
+      'DocentePropuesto',
+      'Dependencia',
+      'Horas Teoria',
+      'Horas Practica',
+      'Cap de Estudiantes',
+      'Proyección Matricula 2026-02',
+      'HoraFinPropuesta',
+      'DominioUso',
+      'NumDia'
+    ];
     
-    const rows = entries.map(e => [
-      e.semester,
-      `"${e.code}"`,
-      `"${e.subject.replace(/"/g, '""')}"`,
-      `"${e.activity}"`,
-      `"${e.group}"`,
-      `"${e.day}"`,
-      `"${e.startTime}"`,
-      e.durationHours,
-      `"${e.location || 'Por asignar'}"`,
-      `"${e.room || 'Por asignar'}"`,
-      `"${e.teacher.replace(/"/g, '""')}"`,
-      `"${e.department || 'INGENIERÍA'}"`,
-      e.hoursTheory || 0,
-      e.hoursPractice || 0,
-      e.projection || 0
-    ]);
+    const rows = entries.map(e => {
+      // NumDia calculation: Lunes = 1, Martes = 2, Miércoles = 3, Jueves = 4, Viernes = 5, Sábado = 6
+      let numDia = '#N/A';
+      if (e.day) {
+        const d = e.day.trim().toLowerCase();
+        if (d.startsWith('lun')) numDia = '1';
+        else if (d.startsWith('mar')) numDia = '2';
+        else if (d.startsWith('mie') || d.startsWith('mié')) numDia = '3';
+        else if (d.startsWith('jue')) numDia = '4';
+        else if (d.startsWith('vie')) numDia = '5';
+        else if (d.startsWith('sab') || d.startsWith('sáb')) numDia = '6';
+      }
+
+      const endTime = getEndTimeString(e.startTime, e.durationHours);
+      const timeRangeStr = e.startTime ? `${e.startTime} - ${endTime}` : '';
+      const activityType = e.activity || 'Teoría';
+      const dominioUso = activityType.toLowerCase().includes('práctica') ? 'Práctica' : 'Teoria';
+
+      return [
+        '', // AsignaciónFija
+        e.semester, // Semestre
+        e.code || '', // Codigo
+        e.subject || '', // Asignatura
+        e.intensity || 0, // Intensidad horaria
+        activityType, // Actividad
+        e.day === 'Por asignar' ? '' : e.day, // DiaPropuesto
+        e.group || '', // Grupo
+        timeRangeStr, // HoraInicio Propuesta
+        e.location === 'Por asignar' ? '' : e.location, // Sede
+        e.room === 'Por asignar' ? '' : e.room, // Requerimiento Aula
+        e.teacher === 'Por asignar' ? 'INSTITUCIONAL' : e.teacher, // DocentePropuesto
+        e.department || 'INGENIERÍA', // Dependencia
+        e.hoursTheory || 0, // Horas Teoria
+        e.hoursPractice || 0, // Horas Practica
+        50, // Cap de Estudiantes
+        e.projection || 0, // Proyección Matricula 2026-02
+        '', // HoraFinPropuesta
+        dominioUso, // DominioUso
+        numDia // NumDia
+      ];
+    });
+
+    const formatRow = (row: any[]) => {
+      return row.map(val => {
+        const str = String(val === null || val === undefined ? '' : val);
+        if (str.includes(';') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      }).join(';');
+    };
 
     // Add Unicode BOM (\uFEFF) to make Excel parse Spanish accents as UTF-8 immediately
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map(formatRow)].join('\n');
     
     // Create blob and download link
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', url);
-    downloadAnchor.setAttribute('download', 'programacion_horarios_excel.csv');
+    downloadAnchor.setAttribute('download', 'programacion_academica.csv');
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+  };
+
+  const normalizeDay = (dayStr: string): string => {
+    if (!dayStr) return 'Por asignar';
+    const cleaned = dayStr.trim().toLowerCase();
+    if (cleaned.startsWith('lun')) return 'Lunes';
+    if (cleaned.startsWith('mar')) return 'Martes';
+    if (cleaned.startsWith('mie') || cleaned.startsWith('mié')) return 'Miércoles';
+    if (cleaned.startsWith('jue')) return 'Jueves';
+    if (cleaned.startsWith('vie')) return 'Viernes';
+    if (cleaned.startsWith('sab') || cleaned.startsWith('sáb')) return 'Sábado';
+    return 'Por asignar';
+  };
+
+  const parseCSVRow = (line: string): string[] => {
+    const result: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ';' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const handleImportFromCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const text = e.target?.result as string;
+      if (!text) return;
+
+      try {
+        const lines = text.split(/\r?\n/);
+        if (lines.length < 2) {
+          alert('El archivo cargado está vacío o no tiene el formato correcto.');
+          return;
+        }
+
+        const parsedEntries: ScheduleEntry[] = [];
+        let skippedRowsCount = 0;
+
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+
+          const cols = parseCSVRow(line);
+          if (cols.length < 12) {
+            skippedRowsCount++;
+            continue;
+          }
+
+          const semester = parseInt(cols[1], 10) || 1;
+          const code = cols[2] || '';
+          const subject = cols[3] || '';
+          
+          if (!subject) {
+            skippedRowsCount++;
+            continue;
+          }
+
+          const intensity = parseInt(cols[4], 10) || 32;
+          const activity = cols[5] || 'Teoría';
+          const day = normalizeDay(cols[6]);
+          const group = cols[7] || 'G1';
+          const timeRange = cols[8] || '';
+          const location = cols[9] || 'RN';
+          const room = cols[10] || 'Por asignar';
+          const teacher = cols[11] || 'INSTITUCIONAL';
+          const department = cols[12] || 'INGENIERÍA';
+          const hoursTheory = parseInt(cols[13], 10) || 0;
+          const hoursPractice = parseInt(cols[14], 10) || 0;
+          const projection = parseInt(cols[16], 10) || parseInt(cols[15], 10) || 50;
+
+          let startTime = '08:00';
+          let durationHours = 2;
+
+          if (timeRange && timeRange.includes('-')) {
+            const parts = timeRange.split('-');
+            if (parts.length === 2) {
+              const startStr = parts[0].trim();
+              const endStr = parts[1].trim();
+              
+              const startMatch = startStr.match(/^(\d{1,2}):(\d{2})$/);
+              const endMatch = endStr.match(/^(\d{1,2}):(\d{2})$/);
+              if (startMatch && endMatch) {
+                startTime = `${startMatch[1].padStart(2, '0')}:${startMatch[2]}`;
+                const startMins = parseInt(startMatch[1], 10) * 60 + parseInt(startMatch[2], 10);
+                const endMins = parseInt(endMatch[1], 10) * 60 + parseInt(endMatch[2], 10);
+                if (endMins > startMins) {
+                  durationHours = (endMins - startMins) / 60;
+                }
+              }
+            }
+          } else if (timeRange && timeRange.trim()) {
+            const startMatch = timeRange.trim().match(/^(\d{1,2}):(\d{2})$/);
+            if (startMatch) {
+              startTime = `${startMatch[1].padStart(2, '0')}:${startMatch[2]}`;
+            }
+          } else {
+            startTime = '';
+            durationHours = 2;
+          }
+
+          const entryId = `imported-${semester}-${code}-${group}-${activity.split(' ')[0].replace(/[^a-zA-Z]/g, '')}-${i}`;
+
+          parsedEntries.push({
+            id: entryId,
+            semester,
+            code,
+            subject,
+            intensity,
+            activity,
+            group,
+            day,
+            startTime,
+            durationHours,
+            location: location || 'RN',
+            room: room || 'Por asignar',
+            teacher: teacher || 'INSTITUCIONAL',
+            department: department || 'INGENIERÍA',
+            hoursTheory,
+            hoursPractice,
+            projection
+          });
+        }
+
+        if (parsedEntries.length === 0) {
+          alert('No se encontraron registros de programación válidos en el archivo.');
+          return;
+        }
+
+        const confirmMessage = `¿Desea cargar ${parsedEntries.length} registros desde el archivo CSV?\nEsto sobreescribirá la programación actual y sincronizará en la base de datos (Supabase/Local).${skippedRowsCount > 0 ? `\n\nSe omitieron ${skippedRowsCount} filas incompletas.` : ''}`;
+        
+        if (!window.confirm(confirmMessage)) {
+          return;
+        }
+
+        setSupabaseLoading(true);
+        setSupabaseMessage('Procesando e importando datos...');
+
+        const importedSubjectsMap = new Map<string, DBSubject>();
+        const importedTeachersMap = new Map<string, DBTeacher>();
+        const importedClassroomsMap = new Map<string, DBClassroom>();
+
+        parsedEntries.forEach(item => {
+          if (item.code && item.subject) {
+            importedSubjectsMap.set(item.code, {
+              code: item.code,
+              name: item.subject,
+              intensity: item.intensity,
+              hours_theory: item.hoursTheory,
+              hours_practice: item.hoursPractice,
+              department: item.department
+            });
+          }
+          if (item.teacher && item.teacher !== 'INSTITUCIONAL' && item.teacher !== 'Por asignar') {
+            importedTeachersMap.set(item.teacher.toLowerCase(), {
+              name: item.teacher,
+              department: item.department
+            });
+          }
+          if (item.room && item.room !== 'Por asignar' && item.room !== 'Institucional') {
+            importedClassroomsMap.set(item.room.toLowerCase(), {
+              name: item.room,
+              location: item.location
+            });
+          }
+        });
+
+        const mergedSubjectsMap = new Map<string, DBSubject>();
+        subjects.forEach(s => mergedSubjectsMap.set(s.code, s));
+        importedSubjectsMap.forEach((s, code) => mergedSubjectsMap.set(code, s));
+        const finalSubjects = Array.from(mergedSubjectsMap.values());
+
+        const mergedTeachersMap = new Map<string, DBTeacher>();
+        teachers.forEach(t => mergedTeachersMap.set(t.name.toLowerCase(), t));
+        importedTeachersMap.forEach((t, nameLower) => mergedTeachersMap.set(nameLower, t));
+        const finalTeachers = Array.from(mergedTeachersMap.values());
+
+        const mergedClassroomsMap = new Map<string, DBClassroom>();
+        classrooms.forEach(c => mergedClassroomsMap.set(c.name.toLowerCase(), c));
+        importedClassroomsMap.forEach((c, nameLower) => mergedClassroomsMap.set(nameLower, c));
+        const finalClassrooms = Array.from(mergedClassroomsMap.values());
+
+        setSubjects(finalSubjects);
+        setTeachers(finalTeachers);
+        setClassrooms(finalClassrooms);
+
+        try {
+          localStorage.setItem('pca_subjects', JSON.stringify(finalSubjects));
+          localStorage.setItem('pca_teachers', JSON.stringify(finalTeachers));
+          localStorage.setItem('pca_classrooms', JSON.stringify(finalClassrooms));
+        } catch (err) {
+          console.warn(err);
+        }
+
+        await saveEntries(parsedEntries);
+
+        setSupabaseMessage('✓ Importación y Sincronización Exitosa');
+        alert(`¡Importación completada con éxito!\nSe cargaron:\n- ${parsedEntries.length} Clases programadas\n- ${importedSubjectsMap.size} Asignaturas\n- ${importedTeachersMap.size} Docentes\n- ${importedClassroomsMap.size} Aulas`);
+        
+        if (uploadInputRef.current) {
+          uploadInputRef.current.value = '';
+        }
+      } catch (err) {
+        console.error('Error parsing uploaded file:', err);
+        setSupabaseMessage('⚠ Error en carga de archivo');
+        alert('Error al procesar el archivo. Verifique que sea un archivo de texto separado por punto y coma (;) con codificación UTF-8.');
+      } finally {
+        setSupabaseLoading(false);
+      }
+    };
+
+    reader.readAsText(file, 'UTF-8');
   };
 
   const handleAutoResolveConflicts = () => {
@@ -689,13 +1222,32 @@ export default function App() {
               </div>
             </div>
 
+            {/* Hidden Input for CSV Upload */}
+            <input
+              type="file"
+              ref={uploadInputRef}
+              onChange={handleImportFromCSV}
+              accept=".csv,.txt"
+              className="hidden animate-none"
+            />
+
+            {/* CSV Import */}
+            <button
+              onClick={() => uploadInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg text-slate-700 transition-all cursor-pointer border border-slate-200 shadow-xs"
+              title="Subir archivo de planilla de horarios en formato de texto separado por punto y coma (;) para alimentar la programación"
+            >
+              <FileUp className="w-4 h-4 text-indigo-600 animate-pulse" />
+              <span>Importar de Excel (.csv)</span>
+            </button>
+
             {/* CSV Export */}
             <button
               onClick={handleExportToCSV}
-              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg text-slate-700 transition-all cursor-pointer border border-slate-200"
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-xs font-semibold rounded-lg text-slate-700 transition-all cursor-pointer border border-slate-200 shadow-xs"
               title="Descargar planilla de horarios finales en formato de hoja de cálculo compatible con Excel y Sheets"
             >
-              <FileDown className="w-4 h-4 text-emerald-600 animate-pulse" />
+              <FileDown className="w-4 h-4 text-emerald-600" />
               <span>Exportar a Excel (.csv)</span>
             </button>
 
@@ -1177,6 +1729,153 @@ export default function App() {
               {/* --- VIEW 5: DATABASE CRUD MANAGEMENT TAB --- */}
               {selectedTab === 'crud' && (
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-6 font-sans">
+                  
+                  {/* CENTRAL DE CONTROL DE PERSISTENCIA Y SINCRONIZACIÓN NUBE */}
+                  <div className="bg-slate-50 rounded-2xl border border-slate-200 p-5 space-y-4 text-left">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Database className="w-5 h-5 text-indigo-600" />
+                          <h2 className="font-bold text-slate-800 text-sm uppercase tracking-wide">
+                            Centro de Sincronización & Persistencia de Horarios
+                          </h2>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-1">
+                          Consulte y controle dónde se guardan sus datos en tiempo real. Puede forzar la carga, subida o fusionar datos entre este dispositivo y la base de datos centralizada de Supabase.
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold leading-none border ${
+                          isSupabaseActive 
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-700' 
+                            : 'bg-amber-50 border-amber-200 text-amber-700'
+                        }`}>
+                          <span className={`w-2 h-2 rounded-full ${isSupabaseActive ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500 animate-pulse'}`} />
+                          {isSupabaseActive ? 'Supabase Nube Sincronizado' : 'Solo Almacenamiento Local (LocalStorage)'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white p-4 rounded-xl border border-slate-200/60 shadow-2xs">
+                      <div className="space-y-1">
+                        <span className="block text-[10px] uppercase font-bold tracking-wider text-slate-400">Estado de Conexión</span>
+                        <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                          {isSupabaseActive ? '✓ Conexión Activa' : '⚠ Desconectado (Modo Offline)'}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="block text-[10px] uppercase font-bold tracking-wider text-slate-400">Registros en Pantalla (Navegador)</span>
+                        <span className="text-xs font-bold text-slate-700">
+                          {entries.length} clases, {subjects.length} asignaturas, {teachers.length} docentes
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="block text-[10px] uppercase font-bold tracking-wider text-slate-400">Canal de Sincronización</span>
+                        <span className="text-xs font-bold text-indigo-600">
+                          {isSupabaseActive ? 'Supabase PostgreSQL Client' : 'Caché Web Local'}
+                        </span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="block text-[10px] uppercase font-bold tracking-wider text-slate-400">Salud de Sincronización</span>
+                        <span className="text-xs font-semibold text-slate-600">
+                          {supabaseMessage}
+                        </span>
+                      </div>
+                    </div>
+
+                    {isSupabaseActive ? (
+                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/60">
+                        <button
+                          type="button"
+                          onClick={handleForceDownloadFromCloud}
+                          disabled={supabaseLoading}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50 text-indigo-700 text-xs font-bold rounded-lg border border-indigo-100 cursor-pointer transition-all"
+                          title="Descargar la planificación guardada en Supabase y sobreescribir la memoria de tu navegador"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>Bajar de la Nube</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleForceUploadToCloud}
+                          disabled={supabaseLoading}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 text-xs font-bold rounded-lg border border-emerald-100 cursor-pointer transition-all"
+                          title="Subir la planificación actual de tu navegador y sobreescribir la base de datos de Supabase"
+                        >
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Subir a la Nube</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleMergeWithCloud}
+                          disabled={supabaseLoading}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 text-amber-700 text-xs font-bold rounded-lg border border-amber-100 cursor-pointer transition-all"
+                          title="Combinar de forma inteligente los horarios de tu navegador con los de Supabase"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>Fusionar Datos (Sincronización Inteligente)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleClearLocalStorage}
+                          disabled={supabaseLoading}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 disabled:opacity-50 text-rose-700 text-xs font-bold rounded-lg border border-rose-100 cursor-pointer transition-all ml-auto"
+                          title="Borrar la memoria temporal de este navegador para recargar fresco desde Supabase"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Limpiar Almacenamiento Local (Reset)</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="bg-amber-50 border border-amber-200/60 rounded-lg p-3 text-xs text-amber-800">
+                        <p className="font-semibold flex items-center gap-1">
+                          <AlertTriangle className="w-4 h-4 text-amber-600" />
+                          ¿Por qué estoy usando la versión local?
+                        </p>
+                        <p className="mt-1 font-sans text-slate-600 leading-normal">
+                          La base de datos de Supabase no ha sido configurada en este entorno, por lo que la aplicación está funcionando con almacenamiento local aislado en su navegador. Para activar la base de datos compartida y persistente, asegurese de añadir <code className="bg-white/80 px-1 py-0.5 rounded text-amber-900 border border-amber-100 font-mono text-[10px]">VITE_SUPABASE_URL</code> y <code className="bg-white/80 px-1 py-0.5 rounded text-amber-900 border border-amber-100 font-mono text-[10px]">VITE_SUPABASE_ANON_KEY</code> en las Variables de Entorno (Secrets) desde AI Studio y compilar de nuevo.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* CSV IMPORT/EXPORT SECTION */}
+                    <div className="bg-indigo-50/20 border border-indigo-100 rounded-xl p-4 mt-3 text-left space-y-3">
+                      <div className="flex items-center gap-2">
+                        <FileUp className="w-4 h-4 text-indigo-600" />
+                        <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wide">
+                          Carga y Descarga Masiva (CSV Excel)
+                        </h3>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-sans leading-relaxed">
+                        Cargue un archivo CSV estructurado (delimitado por punto y coma, UTF-8) para alimentar instantáneamente la programación y las tablas relacionales de asignaturas, docentes y aulas, o descargue la programación actual en el formato oficial.
+                      </p>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => uploadInputRef.current?.click()}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs cursor-pointer transition-colors"
+                          title="Seleccionar archivo CSV para subir al sistema"
+                        >
+                          <FileUp className="w-3.5 h-3.5 shrink-0" />
+                          <span>Subir Horarios (.csv)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleExportToCSV}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 cursor-pointer transition-colors"
+                          title="Descargar la programación actual en formato oficial CSV"
+                        >
+                          <FileDown className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                          <span>Descargar Horarios (.csv)</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                   
                   {/* Related Tables Selector */}
                   <div className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-3">
