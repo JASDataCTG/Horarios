@@ -1,4 +1,4 @@
-import { ScheduleEntry, ScheduleConflict } from './types';
+import { ScheduleEntry, ScheduleConflict, DBClassroom } from './types';
 
 // Standard constant options
 export const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -56,13 +56,48 @@ export function getShiftForTime(timeString: string): 'morning' | 'afternoon' | '
 }
 
 // Detection of conflicts
-export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
+export function detectConflicts(entries: ScheduleEntry[], classrooms: DBClassroom[] = []): ScheduleConflict[] {
   const conflicts: ScheduleConflict[] = [];
   
-  // 1. Shift range & Semester Journey Restrictions
+  const teacherShifts: Record<string, Record<string, Set<string>>> = {};
+
+  // 1. Shift range & Semester Journey Restrictions & Room Compatibility & Max Shifts
   entries.forEach(entry => {
     const mins = timeToMinutes(entry.startTime);
     const shift = getShiftForTime(entry.startTime);
+    
+    if (entry.teacher && entry.teacher !== 'INSTITUCIONAL' && shift !== 'none') {
+      if (!teacherShifts[entry.teacher]) teacherShifts[entry.teacher] = {};
+      if (!teacherShifts[entry.teacher][entry.day]) teacherShifts[entry.teacher][entry.day] = new Set();
+      teacherShifts[entry.teacher][entry.day].add(shift);
+    }
+
+    if (entry.room && entry.room !== 'Por asignar' && entry.room !== 'Institucional') {
+      const roomDef = classrooms.find(c => c.name === entry.room);
+      if (roomDef) {
+        if ((roomDef.capacity || 50) < (entry.projection || 0)) {
+          conflicts.push({
+            type: 'CAPACITY',
+            message: `Capacidad de Aula: El aula "${entry.room}" (cap. ${roomDef.capacity || 50}) es muy pequeña para "${entry.subject}" (proyección ${entry.projection || 0}).`,
+            involvedIds: [entry.id],
+            severity: 'warning'
+          });
+        }
+        if (entry.domain) {
+          const entryTokens = entry.domain.toLowerCase().split(',').map(s => s.trim());
+          const roomTokens = (roomDef.domain || []).map(s => s.toLowerCase());
+          const isSubset = entryTokens.every(t => roomTokens.includes(t));
+          if (!isSubset) {
+            conflicts.push({
+              type: 'DOMAIN',
+              message: `Dominio de Uso: El aula "${entry.room}" no cumple los requisitos de dominio para "${entry.subject}".`,
+              involvedIds: [entry.id],
+              severity: 'error'
+            });
+          }
+        }
+      }
+    }
     
     if (shift === 'none') {
       conflicts.push({
@@ -146,6 +181,21 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
     }
   });
 
+  // Verify 2-shift rule per teacher
+  Object.keys(teacherShifts).forEach(teacher => {
+    Object.keys(teacherShifts[teacher]).forEach(day => {
+      if (teacherShifts[teacher][day].size > 2) {
+        const involvedIds = entries.filter(e => e.teacher === teacher && e.day === day).map(e => e.id);
+        conflicts.push({
+          type: 'MAX_SHIFTS',
+          message: `Regla 2 Jornadas: El docente "${teacher}" tiene clases asignadas en más de 2 jornadas el día ${day}.`,
+          involvedIds,
+          severity: 'error'
+        });
+      }
+    });
+  });
+
   // Compare each pair for timing overlaps on the same day
   for (let i = 0; i < entries.length; i++) {
     const e1 = entries[i];
@@ -183,6 +233,20 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
           involvedIds: [e1.id, e2.id],
           severity: 'error'
         });
+      }
+
+      // Conflict: Regla QuantumX
+      const quantumRooms = ['QuantumX', 'QuantumAlpha', 'QuantumBeta'];
+      if (e1.room && e2.room && quantumRooms.includes(e1.room) && quantumRooms.includes(e2.room)) {
+        if ((e1.room === 'QuantumX' && (e2.room === 'QuantumAlpha' || e2.room === 'QuantumBeta')) ||
+            (e2.room === 'QuantumX' && (e1.room === 'QuantumAlpha' || e1.room === 'QuantumBeta'))) {
+          conflicts.push({
+            type: 'QUANTUM_X',
+            message: `Conflicto QuantumX: El aula "${e1.room}" y "${e2.room}" no pueden ocuparse simultáneamente el ${e1.day} (${e1.startTime} - ${e2.startTime}).`,
+            involvedIds: [e1.id, e2.id],
+            severity: 'error'
+          });
+        }
       }
 
       // Conflict 4: Cruces de horas en el mismo semestre y grupo
@@ -236,7 +300,7 @@ export function detectConflicts(entries: ScheduleEntry[]): ScheduleConflict[] {
 }
 
 // Automatic scheduling resolver algorithm to clean conflicts optimally
-export function autoResolveConflicts(entries: ScheduleEntry[], targetSemester?: number): ScheduleEntry[] {
+export function autoResolveConflicts(entries: ScheduleEntry[], classrooms: DBClassroom[], targetSemester?: number): ScheduleEntry[] {
   // Deep clone to prevent mutations
   const result: ScheduleEntry[] = entries.map(e => ({ ...e }));
 
@@ -253,19 +317,19 @@ export function autoResolveConflicts(entries: ScheduleEntry[], targetSemester?: 
       solved = solveGroup(targetEntries, [
         { shift: 'morning', maxBlocks: 8, baseHour: 7 },
         { shift: 'afternoon', maxBlocks: 4, baseHour: 14 }
-      ], frozenEntries);
+      ], classrooms, frozenEntries);
     } else if (isHigh) {
       solved = solveGroup(targetEntries, [
         { shift: 'evening', maxBlocks: 5, baseHour: 18 },
         { shift: 'afternoon', maxBlocks: 4, baseHour: 14 },
         { shift: 'morning', maxBlocks: 8, baseHour: 7 }
-      ], frozenEntries);
+      ], classrooms, frozenEntries);
     } else {
       solved = solveGroup(targetEntries, [
         { shift: 'morning', maxBlocks: 8, baseHour: 7 },
         { shift: 'afternoon', maxBlocks: 4, baseHour: 14 },
         { shift: 'evening', maxBlocks: 5, baseHour: 18 }
-      ], frozenEntries);
+      ], classrooms, frozenEntries);
     }
 
     const solvedMap = new Map(solved.map(e => [e.id, e]));
@@ -285,13 +349,13 @@ export function autoResolveConflicts(entries: ScheduleEntry[], targetSemester?: 
   const lowSolved = solveGroup(lowSemesters, [
     { shift: 'morning', maxBlocks: 8, baseHour: 7 },
     { shift: 'afternoon', maxBlocks: 4, baseHour: 14 }
-  ]);
+  ], classrooms);
 
   const highSolved = solveGroup(highSemesters, [
     { shift: 'evening', maxBlocks: 5, baseHour: 18 },
     { shift: 'afternoon', maxBlocks: 4, baseHour: 14 },
     { shift: 'morning', maxBlocks: 8, baseHour: 7 }
-  ]);
+  ], classrooms);
 
   return [...lowSolved, ...highSolved, ...otherSemesters];
 }
@@ -299,21 +363,28 @@ export function autoResolveConflicts(entries: ScheduleEntry[], targetSemester?: 
 function solveGroup(
   groupEntries: ScheduleEntry[],
   shifts: { shift: 'morning' | 'afternoon' | 'evening'; maxBlocks: number; baseHour: number }[],
+  classrooms: DBClassroom[],
   frozenEntries: ScheduleEntry[] = []
 ): ScheduleEntry[] {
+  // Separate already fixed entries from the group
+  const fixedInGroup = groupEntries.filter(e => e.isFixed);
+  const toSchedule = groupEntries.filter(e => !e.isFixed);
+  const allFrozen = [...frozenEntries, ...fixedInGroup];
+
   // Sort: largest duration in blocks first
-  const sorted = [...groupEntries].sort((a, b) => {
-    const blocksA = Math.ceil((a.durationHours * 60) / 45);
-    const blocksB = Math.ceil((b.durationHours * 60) / 45);
+  const sorted = [...toSchedule].sort((a, b) => {
+    const blocksA = Math.max(1, Math.round(a.intensity / 16));
+    const blocksB = Math.max(1, Math.round(b.intensity / 16));
     return blocksB - blocksA;
   });
 
-  const ASSIGNABLE_CLASSROOMS = ['QuantumX', 'QuantumBeta', 'QuantumAlpha', 'Matrix', 'Horizons', 'Sala ocasional', 'Institucional'];
+  const ASSIGNABLE_CLASSROOMS = classrooms.map(c => c.name);
 
   // Occupancy grids (mapped relative to DAYS & unified block indices in a day)
   const semesterOccupancy: Record<string, Record<string, boolean[]>> = {};
   const roomOccupancy: Record<string, Record<string, boolean[]>> = {};
   const teacherOccupancy: Record<string, Record<string, boolean[]>> = {};
+  const teacherShiftOccupancy: Record<string, Record<string, Set<string>>> = {};
 
   const getSemesterDayBlocks = (sem: number, group: string, day: string) => {
     const key = `${sem}-${group}`;
@@ -334,6 +405,12 @@ function solveGroup(
     return teacherOccupancy[teacher][day];
   };
 
+  const getTeacherShifts = (teacher: string, day: string) => {
+    if (!teacherShiftOccupancy[teacher]) teacherShiftOccupancy[teacher] = {};
+    if (!teacherShiftOccupancy[teacher][day]) teacherShiftOccupancy[teacher][day] = new Set();
+    return teacherShiftOccupancy[teacher][day];
+  };
+
   const getUnifiedIndex = (shift: 'morning' | 'afternoon' | 'evening', shiftBlock: number): number => {
     if (shift === 'morning') return shiftBlock;
     if (shift === 'afternoon') return 9 + shiftBlock;
@@ -348,15 +425,55 @@ function solveGroup(
     numBlocks: number,
     room: string
   ): boolean => {
+    // 1. Compatibilidad de Aula
+    if (room !== 'Por asignar' && room !== 'Institucional') {
+      const roomDef = classrooms.find(c => c.name === room);
+      if (roomDef) {
+        // Capacidad
+        if ((roomDef.capacity || 50) < (entry.projection || 0)) {
+          return false;
+        }
+        // DominioUso (Subconjunto de tokens)
+        if (entry.domain) {
+          const entryTokens = entry.domain.toLowerCase().split(',').map(s => s.trim());
+          const roomTokens = (roomDef.domain || []).map(s => s.toLowerCase());
+          const isSubset = entryTokens.every(t => roomTokens.includes(t));
+          if (!isSubset) return false;
+        }
+      }
+    }
+
+    // 2. Regla de las 2 jornadas para el Docente
+    const tShifts = entry.teacher !== 'INSTITUCIONAL' ? getTeacherShifts(entry.teacher, day) : null;
+    if (tShifts && !tShifts.has(shift)) {
+      if (tShifts.size >= 2) return false; // Ya tiene 2 jornadas ocupadas
+    }
+
     const semBlocks = getSemesterDayBlocks(entry.semester, entry.group, day);
     const rBlocks = getRoomDayBlocks(room, day);
     const tBlocks = entry.teacher !== 'INSTITUCIONAL' ? getTeacherDayBlocks(entry.teacher, day) : null;
+    
+    // Regla QuantumX
+    let qxBlocks = null, qaBlocks = null, qbBlocks = null;
+    if (room === 'QuantumX' || room === 'QuantumAlpha' || room === 'QuantumBeta') {
+      qxBlocks = getRoomDayBlocks('QuantumX', day);
+      qaBlocks = getRoomDayBlocks('QuantumAlpha', day);
+      qbBlocks = getRoomDayBlocks('QuantumBeta', day);
+    }
 
     for (let i = 0; i < numBlocks; i++) {
       const unifiedIdx = getUnifiedIndex(shift, startBlock + i);
       if (entry.group !== 'SG' && entry.teacher !== 'INSTITUCIONAL' && semBlocks[unifiedIdx]) return false;
       if (room !== 'Por asignar' && rBlocks[unifiedIdx]) return false;
       if (tBlocks && tBlocks[unifiedIdx]) return false;
+
+      // Regla QuantumX: si es QuantumX, Alpha y Beta deben estar libres
+      if (room === 'QuantumX') {
+        if (qaBlocks && qaBlocks[unifiedIdx]) return false;
+        if (qbBlocks && qbBlocks[unifiedIdx]) return false;
+      } else if (room === 'QuantumAlpha' || room === 'QuantumBeta') {
+        if (qxBlocks && qxBlocks[unifiedIdx]) return false;
+      }
     }
     return true;
   };
@@ -373,6 +490,11 @@ function solveGroup(
     const semBlocks = getSemesterDayBlocks(entry.semester, entry.group, day);
     const rBlocks = getRoomDayBlocks(room, day);
     const tBlocks = entry.teacher !== 'INSTITUCIONAL' ? getTeacherDayBlocks(entry.teacher, day) : null;
+    const tShifts = entry.teacher !== 'INSTITUCIONAL' ? getTeacherShifts(entry.teacher, day) : null;
+
+    if (status && tShifts) {
+      tShifts.add(shift);
+    }
 
     for (let i = 0; i < numBlocks; i++) {
       const unifiedIdx = getUnifiedIndex(shift, startBlock + i);
@@ -389,14 +511,14 @@ function solveGroup(
   };
 
   // Pre-occupy slots for the frozen entries to treat them as locked scheduling constraints
-  frozenEntries.forEach(fe => {
+  allFrozen.forEach(fe => {
     const shift = getShiftForTime(fe.startTime);
     if (shift !== 'none') {
       const baseHour = shift === 'morning' ? 7 : shift === 'afternoon' ? 14 : 18;
       const startMins = timeToMinutes(fe.startTime);
       const baseMins = baseHour * 60;
       const startBlk = Math.max(0, Math.floor((startMins - baseMins) / 45));
-      const numBlocks = Math.ceil((fe.durationHours * 60) / 45);
+      const numBlocks = Math.max(1, Math.round(fe.intensity / 16));
       const room = fe.room || 'Por asignar';
       setSpanOccupancy(fe, fe.day, shift, startBlk, numBlocks, room, true);
     }
@@ -451,7 +573,7 @@ function solveGroup(
 
   for (let idx = 0; idx < sorted.length; idx++) {
     const entry = sorted[idx];
-    const numBlocks = Math.ceil((entry.durationHours * 60) / 45);
+    const numBlocks = Math.max(1, Math.round(entry.intensity / 16));
 
     const dayCandidates = [entry.day, ...DAYS.filter(d => d !== entry.day)];
     const originalRoomVal = entry.room || 'Por asignar';
@@ -533,6 +655,7 @@ function solveGroup(
       entry.day = opt.day;
       entry.room = opt.room;
       entry.startTime = startTimeStr;
+      entry.durationHours = numBlocks * 0.75;
     } else {
       const fallbackRooms = ['Por asignar', 'Institucional'];
       const fallbackOptions: CandidateOption[] = [];
@@ -592,6 +715,7 @@ function solveGroup(
         entry.day = opt.day;
         entry.room = opt.room;
         entry.startTime = startTimeStr;
+        entry.durationHours = numBlocks * 0.75;
       } else {
         const currentShift = getShiftForTime(entry.startTime);
         // SI SE ENCUENTRA EN SÁBADO POR LA TARDE/NOCHE, ¡FORZAR A UN DÍA DE SEMANA!
@@ -604,6 +728,7 @@ function solveGroup(
                 entry.room = 'Por asignar';
                 const startOff = shiftConfig.baseHour * 60;
                 entry.startTime = `${String(Math.floor(startOff / 60)).padStart(2, '0')}:${String(startOff % 60).padStart(2, '0')}`;
+                entry.durationHours = numBlocks * 0.75;
                 setSpanOccupancy(entry, day, shiftConfig.shift, 0, numBlocks, 'Por asignar', true);
                 forced = true;
                 break;
@@ -616,6 +741,7 @@ function solveGroup(
             entry.day = 'Lunes';
             entry.startTime = '18:00';
             entry.room = 'Por asignar';
+            entry.durationHours = numBlocks * 0.75;
             setSpanOccupancy(entry, 'Lunes', 'evening', 0, numBlocks, 'Por asignar', true);
           }
         } else {
@@ -626,6 +752,7 @@ function solveGroup(
               const startMins = timeToMinutes(entry.startTime);
               const baseMins = shiftConf.baseHour * 60;
               const startBlk = Math.max(0, Math.floor((startMins - baseMins) / 45));
+              entry.durationHours = numBlocks * 0.75;
               setSpanOccupancy(entry, entry.day, currentShift, startBlk, numBlocks, originalRoomVal, true);
             }
           }
@@ -634,7 +761,7 @@ function solveGroup(
     }
   }
 
-  return sorted;
+  return [...sorted, ...fixedInGroup];
 }
 
 // Initial records built from the PDF screens

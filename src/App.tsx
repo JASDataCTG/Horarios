@@ -100,7 +100,9 @@ const getInitialClassrooms = (): DBClassroom[] => {
       const matched = INITIAL_ENTRIES.find(e => e.room === rm);
       list.push({
         name: rm,
-        location: matched ? matched.location : 'RN'
+        location: matched ? matched.location : 'RN',
+        domain: ['Teoria', 'Práctica', 'Desarrollo', 'Hardware'],
+        capacity: 60
       });
     }
   });
@@ -548,8 +550,8 @@ export default function App() {
   // --- COMPUTED CONFLICTS ---
   // Real-time conflict engine computing overlaps in fractions of milliseconds on state changes
   const conflicts = useMemo(() => {
-    return detectConflicts(entries);
-  }, [entries]);
+    return detectConflicts(entries, classrooms);
+  }, [entries, classrooms]);
 
   // --- KPI STATISTICS ---
   const totalHours = useMemo(() => {
@@ -810,7 +812,7 @@ export default function App() {
       const dominioUso = activityType.toLowerCase().includes('práctica') ? 'Práctica' : 'Teoria';
 
       return [
-        '', // AsignaciónFija
+        e.isFixed ? 'X' : '', // AsignaciónFija
         e.semester, // Semestre
         e.code || '', // Codigo
         e.subject || '', // Asignatura
@@ -825,10 +827,10 @@ export default function App() {
         e.department || 'INGENIERÍA', // Dependencia
         e.hoursTheory || 0, // Horas Teoria
         e.hoursPractice || 0, // Horas Practica
-        50, // Cap de Estudiantes
+        e.capacity || 50, // Cap de Estudiantes
         e.projection || 0, // Proyección Matricula 2026-02
         '', // HoraFinPropuesta
-        dominioUso, // DominioUso
+        e.domain || dominioUso, // DominioUso
         numDia // NumDia
       ];
     });
@@ -917,6 +919,7 @@ export default function App() {
             continue;
           }
 
+          const isFixed = cols[0] ? cols[0].trim().toLowerCase() === 'x' || cols[0].trim() === '1' : false;
           const semester = parseInt(cols[1], 10) || 1;
           const code = cols[2] || '';
           const subject = cols[3] || '';
@@ -937,7 +940,9 @@ export default function App() {
           const department = cols[12] || 'INGENIERÍA';
           const hoursTheory = parseInt(cols[13], 10) || 0;
           const hoursPractice = parseInt(cols[14], 10) || 0;
+          const capacity = parseInt(cols[15], 10) || 50;
           const projection = parseInt(cols[16], 10) || parseInt(cols[15], 10) || 50;
+          const domain = cols[18] || (activity.toLowerCase().includes('práctica') ? 'Práctica' : 'Teoria');
 
           let startTime = '08:00';
           let durationHours = 2;
@@ -988,7 +993,10 @@ export default function App() {
             department: department || 'INGENIERÍA',
             hoursTheory,
             hoursPractice,
-            projection
+            projection,
+            isFixed,
+            domain,
+            capacity
           });
         }
 
@@ -1084,7 +1092,7 @@ export default function App() {
 
   const handleAutoResolveConflicts = () => {
     try {
-      const resolved = autoResolveConflicts(entries);
+      const resolved = autoResolveConflicts(entries, classrooms);
       saveEntries(resolved);
       alert('¡Resolución de conflictos general completada exitosamente! Se han reorganizado todas las franjas horarias respetando las restricciones de semestres (1-5 de mañana/tarde, y de 6-9 de noche) y previniendo cruces de aulas, docentes o semestres.');
     } catch (error) {
@@ -1094,7 +1102,7 @@ export default function App() {
 
   const handleAutoResolveConflictsBySemester = (semester: number) => {
     try {
-      const resolved = autoResolveConflicts(entries, semester);
+      const resolved = autoResolveConflicts(entries, classrooms, semester);
       saveEntries(resolved);
       alert(`¡Reorganización del Semestre ${semester} completada con éxito! Se han recalculado sus franjas horarias congelando los demás semestres para evitar cualquier cruce.`);
     } catch (error) {

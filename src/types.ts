@@ -17,6 +17,9 @@ export interface ScheduleEntry {
   hoursPractice: number;
   projection: number; // Proyección matrícula
   observation?: string; // Observation notes
+  isFixed?: boolean; // AsignaciónFija
+  domain?: string; // DominioUso
+  capacity?: number; // Cap de Estudiantes
 }
 
 export interface DBSubject {
@@ -31,6 +34,8 @@ export interface DBSubject {
 export interface DBClassroom {
   name: string;
   location: string;
+  domain?: string[];
+  capacity?: number;
 }
 
 export interface DBTeacher {
@@ -41,7 +46,7 @@ export interface DBTeacher {
 export type ShiftType = 'morning' | 'afternoon' | 'evening' | 'all';
 
 export interface ScheduleConflict {
-  type: 'TEACHER' | 'ROOM' | 'GROUP' | 'OUT_OF_SHIFT' | 'GAP';
+  type: 'TEACHER' | 'ROOM' | 'GROUP' | 'OUT_OF_SHIFT' | 'GAP' | 'CAPACITY' | 'DOMAIN' | 'QUANTUM_X' | 'MAX_SHIFTS';
   message: string;
   involvedIds: string[];
   severity: 'error' | 'warning';
