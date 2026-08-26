@@ -1,6 +1,6 @@
 {
   "name": "Planificador de Horarios",
-  "description": "Aplicación interactiva para organizar y programar los horarios universitarios de lunes a sábado, con detección de choques y visualización por jornadas.",
+  "description": "Aplicación interactiva para programar horarios universitarios con motor de optimización matemática Google OR-Tools (CP-SAT), detección de choques y gestión en tiempo real.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

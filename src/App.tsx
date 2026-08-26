@@ -28,7 +28,10 @@ import {
   Trash2,
   Copy,
   GraduationCap,
-  X
+  X,
+  Code2,
+  FileCode,
+  Cpu
 } from 'lucide-react';
 
 import { ScheduleEntry, ShiftType, DBSubject, DBClassroom, DBTeacher } from './types';
@@ -54,6 +57,8 @@ import ConflictAlerts from './components/ConflictAlerts';
 import ClassroomMatrix from './components/ClassroomMatrix';
 import TeacherSchedules from './components/TeacherSchedules';
 import SemesterStatusMatrix from './components/SemesterStatusMatrix';
+import DatabaseSchemaModal from './components/DatabaseSchemaModal';
+import OrtoolsModal from './components/OrtoolsModal';
 
 // Relational database default seeding helper functions
 const getInitialSubjects = (): DBSubject[] => {
@@ -202,6 +207,8 @@ export default function App() {
 
   // Modal control
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSchemaModalOpen, setIsSchemaModalOpen] = useState(false);
+  const [isOrtoolsModalOpen, setIsOrtoolsModalOpen] = useState(false);
   const [entryToEdit, setEntryToEdit] = useState<ScheduleEntry | null>(null);
 
   // File Upload reference
@@ -1110,6 +1117,11 @@ export default function App() {
     }
   };
 
+  const handleApplyOrtoolsSolution = (solvedEntries: ScheduleEntry[], summary: string) => {
+    saveEntries(solvedEntries);
+    alert(`¡Optimización con Google OR-Tools CP-SAT aplicada exitosamente!\n\n${summary}`);
+  };
+
   // --- SHIFT CHECKS ---
   const shiftText = () => {
     if (selectedShift === 'morning') return 'Mañana: 7 AM - 1:15 PM';
@@ -1259,7 +1271,15 @@ export default function App() {
               <span>Exportar a Excel (.csv)</span>
             </button>
 
-
+            {/* Google OR-Tools CP-SAT Modal Button */}
+            <button
+              onClick={() => setIsOrtoolsModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-all cursor-pointer border border-slate-700"
+              title="Abrir motor de optimización matemática avanzada Google OR-Tools (CP-SAT)"
+            >
+              <Cpu className="w-4 h-4 text-emerald-400 animate-pulse" />
+              <span>OR-Tools CP-SAT</span>
+            </button>
 
             <button
               onClick={() => window.print()}
@@ -1472,10 +1492,21 @@ export default function App() {
                       <span>Reorganizar</span>
                     </button>
                   </div>
-                 <button
-                   onClick={handleOpenCreate}
-                   className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
-                 >
+                  
+                  {/* Google OR-Tools Action in Tab Toolbar */}
+                  <button
+                    onClick={() => setIsOrtoolsModalOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-indigo-950 hover:bg-indigo-900 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer border border-indigo-800"
+                    title="Optimización matemática exhaustiva con Google OR-Tools CP-SAT"
+                  >
+                    <Cpu className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                    <span>Optimizar con OR-Tools</span>
+                  </button>
+
+                  <button
+                    onClick={handleOpenCreate}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
+                  >
                    <Plus className="w-3.5 h-3.5 shrink-0" />
                    Agregar Clase
                  </button>
@@ -1754,7 +1785,17 @@ export default function App() {
                       </div>
                       
                       <div className="flex items-center gap-2">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold leading-none border ${
+                        <button
+                          type="button"
+                          onClick={() => setIsSchemaModalOpen(true)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg shadow-xs transition-colors cursor-pointer"
+                          title="Ver y descargar el script SQL / DDL para crear todas las tablas en Supabase o PostgreSQL"
+                        >
+                          <Code2 className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Ver Script SQL / DDL de la BD</span>
+                        </button>
+
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold leading-none border ${
                           isSupabaseActive 
                             ? 'bg-emerald-50 border-emerald-200 text-emerald-700' 
                             : 'bg-amber-50 border-amber-200 text-amber-700'
@@ -2849,6 +2890,21 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* DATABASE SQL SCHEMA DDL MODAL */}
+      <DatabaseSchemaModal
+        isOpen={isSchemaModalOpen}
+        onClose={() => setIsSchemaModalOpen(false)}
+      />
+
+      {/* GOOGLE OR-TOOLS CP-SAT OPTIMIZATION MODAL */}
+      <OrtoolsModal
+        isOpen={isOrtoolsModalOpen}
+        onClose={() => setIsOrtoolsModalOpen(false)}
+        entries={entries}
+        classrooms={classrooms}
+        onApplySolution={handleApplyOrtoolsSolution}
+      />
 
     </div>
   );
